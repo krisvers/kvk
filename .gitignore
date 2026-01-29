@@ -5,6 +5,9 @@
 *.dll
 *.dylib
 
+.DS_Store
+.cache/
+
 build/
 out/
 
