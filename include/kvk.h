@@ -7,6 +7,8 @@
 
 namespace kvk {
 
+using MessageCallback = void(*)(VkResult vk_result, VkDebugUtilsMessageSeverityFlagsEXT severity, const char* message, const char* function);
+
 using ReturnArrayResizeCallback = bool(*)(size_t size, void* pdata);
 using ReturnArraySizeCallback = size_t(*)(void* pdata);
 
@@ -67,8 +69,6 @@ public:
         return item;
     }
 };
-
-using MessageCallback = void(*)(VkResult vk_result, VkDebugUtilsMessageSeverityFlagsEXT severity, const char* message, const char* function);
 
 struct InstancePresets {
     bool recommended = false;

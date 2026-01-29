@@ -1,6 +1,5 @@
 #define KVK_IMPLEMENTATION
 #include "kvk.h"
-
 #include "kvk_util.inl"
 
 #include <vector>
