@@ -4,6 +4,7 @@
 
 #include <vector>
 #include <format>
+#include <algorithm>
 
 template<>
 struct std::formatter<VkFormat> {
@@ -95,7 +96,7 @@ VkResult create_instance(InstanceCreateInfo const& create_info, VkInstance& vk_i
 #ifdef KVK_WINDOWS
         enabled_extensions.push_back("VK_KHR_win32_surface");
 #elif defined(KVK_APPLE)
-        enabled_extensions.push_back("VK_KHR_metal_surface");
+        enabled_extensions.push_back("VK_EXT_metal_surface");
 #else
         enabled_extensions.push_back("VK_KHR_xlib_surface");
 #endif
@@ -597,13 +598,15 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
         .memoryPriority = VK_TRUE,
     };
 
-    if (create_info.presets.recommended) {
+    #define KVK_TMP_HAS_EXT(list_, name_) (std::find_if(list_.begin(), list_.end(), [](VkExtensionProperties const& p) -> bool { return std::strcmp(p.extensionName, name_) == 0; }) != list_.end())
+
+    if (create_info.presets.recommended && KVK_TMP_HAS_EXT(available_extensions, VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME)) {
         enabled_extensions.push_back(VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME);
         vk_pageable_device_local_memory_features_ext.pNext = vk_pnext;
         vk_pnext = &vk_pageable_device_local_memory_features_ext;
     }
 
-    if (create_info.presets.recommended) {
+    if (create_info.presets.recommended && KVK_TMP_HAS_EXT(available_extensions, VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME)) {
         enabled_extensions.push_back(VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME);
         vk_memory_priority_features_ext.pNext = vk_pnext;
         vk_pnext = &vk_memory_priority_features_ext;
@@ -612,6 +615,8 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
     if (create_info.presets.enable_dynamic_rendering) {
         enabled_extensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
     }
+
+    #undef KVK_TMP_HAS_EXT
 
     VkDeviceCreateInfo vk_device_create_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,

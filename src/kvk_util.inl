@@ -20,7 +20,8 @@
 #endif
 #endif
 
-#define KVK_ERR(res_, sev_, msg_, ...) if (g_error_callback != nullptr) { g_error_callback(res_, sev_, std::format(msg_, __VA_ARGS__).c_str(), KVK_FUNCTION); }
+#define KVK_VA_ARGS(...) , ##__VA_ARGS__
+#define KVK_ERR(res_, sev_, msg_, ...) if (g_error_callback != nullptr) { g_error_callback(res_, sev_, std::format(msg_ KVK_VA_ARGS(__VA_ARGS__)).c_str(), KVK_FUNCTION); }
 
 inline bool operator<(VkPhysicalDeviceLimits const& a, VkPhysicalDeviceLimits const& b) {
     return (a.maxImageDimension1D < b.maxImageDimension1D) ||
