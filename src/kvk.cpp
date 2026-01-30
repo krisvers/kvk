@@ -332,7 +332,7 @@ VkPhysicalDevice select_physical_device(VkInstance vk_instance, PhysicalDeviceQu
     return VK_NULL_HANDLE;
 }
 
-VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_info, VkPhysicalDevice& vk_physical_device, VkDevice& vk_device, ReturnArray<DeviceQueueReturn> queue_returns) {
+VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_info, VkPhysicalDevice& vk_physical_device, VkDevice& vk_device, ArrayReference<DeviceQueueReturn> queue_returns) {
     vk_physical_device = create_info.vk_physical_device;
 
     VkResult vk_result;

@@ -9,22 +9,22 @@ namespace kvk {
 
 using MessageCallback = void(*)(VkResult vk_result, VkDebugUtilsMessageSeverityFlagsEXT severity, const char* message, const char* function);
 
-using ReturnArrayResizeCallback = bool(*)(size_t size, void* pdata);
-using ReturnArraySizeCallback = size_t(*)(void* pdata);
+using ArrayReferenceResizeCallback = bool(*)(size_t size, void* pdata);
+using ArrayReferenceSizeCallback = size_t(*)(void* pdata);
 
 template<typename T>
-using ReturnArrayIndexCallback = T&(*)(uint32_t index, void* pdata, bool& ok);
+using ArrayReferenceIndexCallback = T&(*)(uint32_t index, void* pdata, bool& ok);
 
 template<typename T>
-class ReturnArray {
+class ArrayReference {
 private:
     void* pdata;
-    ReturnArrayResizeCallback resize_callback;
-    ReturnArraySizeCallback size_callback;
-    ReturnArrayIndexCallback<T> index_callback;
+    ArrayReferenceResizeCallback resize_callback;
+    ArrayReferenceSizeCallback size_callback;
+    ArrayReferenceIndexCallback<T> index_callback;
 
 public:
-    ReturnArray(std::vector<T>& vector) {
+    ArrayReference(std::vector<T>& vector) {
         pdata = reinterpret_cast<void*>(&vector);
         resize_callback = [](size_t size, void* pdata) -> bool {
             try {
@@ -63,7 +63,7 @@ public:
         bool ok = true;
         T& item = index_callback(i, pdata, ok);
         if (!ok) {
-            throw std::out_of_range("ReturnArray index out of range");
+            throw std::out_of_range("ArrayReference index out of range");
         }
 
         return item;
@@ -190,6 +190,36 @@ struct DeviceQueueReturn {
     uint32_t queue_index;
 };
 
-VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_info, VkPhysicalDevice& vk_physical_device, VkDevice& vk_device, ReturnArray<DeviceQueueReturn> queue_returns);
+VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_info, VkPhysicalDevice& vk_physical_device, VkDevice& vk_device, ArrayReference<DeviceQueueReturn> queue_returns);
+
+struct SwapchainReturn {
+    VkFormat vk_backbuffer_format;
+    VkColorSpaceKHR vk_color_space;
+    VkPresentModeKHR vk_present_mode;
+    VkExtent2D vk_current_extent;
+    ArrayReference<VkImage> vk_backbuffers;
+};
+
+struct SwapchainPreference {
+    uint32_t image_count;
+    uint32_t layer_count;
+    VkExtent2D extent;
+
+    VkFormat format;
+    VkImageUsageFlags image_usage;
+    VkColorSpaceKHR color_space;
+    VkPresentModeKHR present_mode;
+};
+
+struct SwapchainCreateInfo {
+    VkDevice vk_device;
+    VkPhysicalDevice vk_physical_device;
+    VkSurfaceKHR vk_surface;
+
+    void* vk_pnext;
+    VkFlags vk_flags;
+    uint32_t requested_image_count;
+    VkExtent2D vk_minimum_extent;
+};
 
 }
