@@ -4,6 +4,18 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
+struct Queue {
+    VkQueue vk_queue;
+    uint32_t family_index;
+    uint32_t queue_index;
+};
+
+struct Queues {
+    Queue graphics0_0;
+    Queue transfer1_0;
+    Queue compute2_0;
+};
+
 int main() {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         std::cerr << "SDL_Init Error: " << SDL_GetError() << std::endl;
@@ -192,6 +204,24 @@ int main() {
     for (kvk::DeviceQueueReturn const& queue_return : vk_device_queues) {
         std::cout << "Got device queue " << queue_return.family_index << "." << queue_return.queue_index << " rq (" << queue_return.request_index << ")" << std::endl;
     }
+
+    Queues queues = {
+        .graphics0_0 = {
+            .vk_queue = vk_device_queues[0].vk_queue,
+            .family_index = vk_device_queues[0].family_index,
+            .queue_index = vk_device_queues[0].queue_index,
+        },
+        .transfer1_0 = {
+            .vk_queue = vk_device_queues[1].vk_queue,
+            .family_index = vk_device_queues[1].family_index,
+            .queue_index = vk_device_queues[1].queue_index,
+        },
+        .compute2_0 = {
+            .vk_queue = vk_device_queues[2].vk_queue,
+            .family_index = vk_device_queues[2].family_index,
+            .queue_index = vk_device_queues[2].queue_index,
+        },
+    };
     
     bool running = true;
     SDL_Event sdl_event;

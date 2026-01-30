@@ -203,7 +203,6 @@ struct SwapchainReturn {
 struct SwapchainPreference {
     uint32_t image_count;
     uint32_t layer_count;
-    VkExtent2D extent;
 
     VkFormat format;
     VkImageUsageFlags image_usage;
@@ -218,8 +217,9 @@ struct SwapchainCreateInfo {
 
     void* vk_pnext;
     VkFlags vk_flags;
-    uint32_t requested_image_count;
-    VkExtent2D vk_minimum_extent;
+    VkExtent2D extent;
+
+    std::vector<SwapchainPreference> const& preferences;
 };
 
 }
