@@ -58,7 +58,7 @@ int main() {
     if (kvk::create_instance({
         .app_name = "kvk demo",
         .app_version = VK_MAKE_VERSION(1, 0, 0),
-        .vk_version = VK_MAKE_API_VERSION(0, 1, 2, 0),
+        .vk_version = VK_MAKE_API_VERSION(0, 1, 3, 0),
         .vk_layers = {},
         .vk_extensions = {},
         .presets = {
@@ -119,7 +119,7 @@ int main() {
     if (kvk::create_device(vk_instance, {
         .vk_extensions = {},
         .physical_device_query = {
-            .minimum_vk_version = VK_MAKE_API_VERSION(0, 1, 2, 0),
+            .minimum_vk_version = VK_MAKE_API_VERSION(0, 1, 3, 0),
             .excluded_device_types = kvk::PhysicalDeviceTypeFlags::CPU | kvk::PhysicalDeviceTypeFlags::VIRTUAL_GPU | kvk::PhysicalDeviceTypeFlags::OTHER,
             .minimum_features = {
                 .shaderSampledImageArrayDynamicIndexing = true,
@@ -127,12 +127,7 @@ int main() {
                 .shaderStorageImageArrayDynamicIndexing = true,
             },
             .minimum_limits = {},
-            .required_extensions = {
-                {
-                    .extensionName = VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
-                    .specVersion = 1,
-                }
-            },
+            .required_extensions = {},
             .minimum_format_properties = {
                 {
                     .format = VK_FORMAT_B8G8R8A8_SRGB,
@@ -294,7 +289,34 @@ int main() {
     }
 
     VkSwapchainKHR vk_swapchain = swapchain_returns.vk_swapchain;
-    
+    std::vector<VkImageView> vk_swapchain_backbuffer_views(vk_swapchain_backbuffers.size());
+    for (uint32_t i = 0; i < vk_swapchain_backbuffers.size(); ++i) {
+        VkImageViewCreateInfo vk_image_view_create_info = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = vk_swapchain_backbuffers[i],
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = VK_FORMAT_B8G8R8A8_SRGB,
+            .components = {
+                .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+            },
+            .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        };
+
+        if (vkCreateImageView(vk_device, &vk_image_view_create_info, nullptr, &vk_swapchain_backbuffer_views[i]) != VK_SUCCESS) {
+            std::cerr << "Failed to create Vulkan swapchain backbuffer image view at index " << i << std::endl;
+            return 1;
+        }
+    }
+
     bool running = true;
     SDL_Event sdl_event;
     while (running) {
@@ -304,6 +326,10 @@ int main() {
                 break;
             }
         }
+    }
+
+    for (uint32_t i = 0; i < vk_swapchain_backbuffer_views.size(); ++i) {
+        vkDestroyImageView(vk_device, vk_swapchain_backbuffer_views[i], nullptr);
     }
 
     vkDestroySwapchainKHR(vk_device, vk_swapchain, nullptr);

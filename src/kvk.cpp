@@ -8,6 +8,7 @@
 #include <algorithm>
 
 namespace kvk {
+
 static MessageCallback g_error_callback = nullptr;
 
 void set_error_callback(MessageCallback callback) {
@@ -340,7 +341,6 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
 
     bool satisfied = true;
     VkPhysicalDeviceProperties physical_device_properties;
-    VkPhysicalDeviceFeatures physical_device_features;
     std::vector<VkExtensionProperties> available_extensions;
     VkPhysicalDeviceMemoryProperties memory_properties;
     std::vector<VkQueueFamilyProperties> queue_family_properties_list;
@@ -366,10 +366,11 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
                 continue;
             }
 
-            vkGetPhysicalDeviceFeatures(physical_device, &physical_device_features);
+            VkPhysicalDeviceFeatures available_physical_device_features;
+            vkGetPhysicalDeviceFeatures(physical_device, &available_physical_device_features);
 
-            PhysicalDeviceFeaturesNext* features_next = reinterpret_cast<PhysicalDeviceFeaturesNext*>(&physical_device_features.robustBufferAccess);
-            PhysicalDeviceFeaturesNext* features_final = reinterpret_cast<PhysicalDeviceFeaturesNext*>(&physical_device_features.inheritedQueries);
+            PhysicalDeviceFeaturesNext* features_next = reinterpret_cast<PhysicalDeviceFeaturesNext*>(&available_physical_device_features.robustBufferAccess);
+            PhysicalDeviceFeaturesNext* features_final = reinterpret_cast<PhysicalDeviceFeaturesNext*>(&available_physical_device_features.inheritedQueries);
 
             uint32_t feature_index = 0;
             PhysicalDeviceFeaturesNext const* queried_features_next = reinterpret_cast<PhysicalDeviceFeaturesNext const*>(&create_info.physical_device_query.minimum_features.robustBufferAccess);
@@ -562,6 +563,13 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
     VkFlags vk_flags = create_info.vk_flags;
     void* vk_pnext = create_info.vk_pnext;
     std::vector<const char*> enabled_extensions(create_info.vk_extensions);
+    VkPhysicalDeviceFeatures enabled_features = {};
+    if (create_info.vk_enabled_features.has_value()) {
+        enabled_features = create_info.vk_enabled_features.value();
+    } else if (create_info.vk_physical_device != nullptr) {
+        enabled_features = create_info.physical_device_query.minimum_features;
+    }
+
     if (create_info.presets.enable_portability_subset) {
         enabled_extensions.push_back("VK_KHR_portability_subset");
     } else if (create_info.presets.recommended) {
@@ -586,6 +594,12 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
         .memoryPriority = VK_TRUE,
     };
 
+    VkPhysicalDeviceDynamicRenderingFeaturesKHR vk_dynamic_rendering_features_ext = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR,
+        .pNext = nullptr,
+        .dynamicRendering = VK_TRUE,
+    };
+
     #define KVK_TMP_HAS_EXT(list_, name_) (std::find_if(list_.begin(), list_.end(), [](VkExtensionProperties const& p) -> bool { return std::strcmp(p.extensionName, name_) == 0; }) != list_.end())
 
     if (create_info.presets.recommended && KVK_TMP_HAS_EXT(available_extensions, VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME)) {
@@ -602,6 +616,8 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
 
     if (create_info.presets.enable_dynamic_rendering) {
         enabled_extensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
+        vk_dynamic_rendering_features_ext.pNext = vk_pnext;
+        vk_pnext = &vk_dynamic_rendering_features_ext;
     }
 
     #undef KVK_TMP_HAS_EXT
@@ -616,7 +632,7 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
         .ppEnabledLayerNames = nullptr,
         .enabledExtensionCount = static_cast<uint32_t>(enabled_extensions.size()),
         .ppEnabledExtensionNames = enabled_extensions.size() == 0 ? nullptr : enabled_extensions.data(),
-        .pEnabledFeatures = &physical_device_features,
+        .pEnabledFeatures = &enabled_features,
     };
 
     if (create_info.vk_physical_device != nullptr) {

@@ -168,6 +168,7 @@ struct DevicePresets {
     bool enable_portability_subset;
     bool enable_swapchain;
     bool enable_dynamic_rendering;
+    bool enable_maintenance1;
 };
 
 struct DeviceCreateInfo {
@@ -175,6 +176,7 @@ struct DeviceCreateInfo {
     VkFlags vk_flags;
     void* vk_pnext;
     std::vector<const char*> const& vk_extensions;
+    std::optional<VkPhysicalDeviceFeatures> vk_enabled_features;
 
     union {
         ManualPhysicalDeviceSelection manual_selection;
