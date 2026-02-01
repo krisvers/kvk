@@ -4,6 +4,7 @@
 
 #include <vector>
 #include <stdexcept>
+#include <optional>
 
 namespace kvk {
 
@@ -192,34 +193,42 @@ struct DeviceQueueReturn {
 
 VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_info, VkPhysicalDevice& vk_physical_device, VkDevice& vk_device, ArrayReference<DeviceQueueReturn> queue_returns);
 
-struct SwapchainReturn {
-    VkFormat vk_backbuffer_format;
-    VkColorSpaceKHR vk_color_space;
-    VkPresentModeKHR vk_present_mode;
-    VkExtent2D vk_current_extent;
-    ArrayReference<VkImage> vk_backbuffers;
-};
-
 struct SwapchainPreference {
     uint32_t image_count;
     uint32_t layer_count;
 
-    VkFormat format;
-    VkImageUsageFlags image_usage;
-    VkColorSpaceKHR color_space;
-    VkPresentModeKHR present_mode;
+    VkSurfaceFormatKHR vk_surface_format;
+    VkPresentModeKHR vk_present_mode;
 };
 
 struct SwapchainCreateInfo {
-    VkDevice vk_device;
     VkPhysicalDevice vk_physical_device;
     VkSurfaceKHR vk_surface;
+    VkSwapchainKHR vk_old_swapchain;
 
     void* vk_pnext;
     VkFlags vk_flags;
-    VkExtent2D extent;
+    std::optional<VkExtent2D> vk_extent;
+    VkImageUsageFlags vk_image_usage;
 
     std::vector<SwapchainPreference> const& preferences;
+
+    VkSharingMode vk_image_sharing_mode;
+    std::vector<uint32_t> const& vk_queue_family_indices;
+
+    VkSurfaceTransformFlagBitsKHR vk_pre_transform;
+    VkCompositeAlphaFlagBitsKHR vk_composite_alpha;
+    VkBool32 vk_clipped;
 };
 
+struct SwapchainReturns {
+    VkSwapchainKHR vk_swapchain;
+
+    uint32_t chosen_preference;
+    VkExtent2D vk_current_extent;
+    std::optional<ArrayReference<VkImage>> vk_backbuffers;
+};
+
+VkResult create_swapchain(VkDevice vk_device, SwapchainCreateInfo const& create_info, SwapchainReturns& returns);
+    
 }

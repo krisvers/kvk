@@ -1,5 +1,7 @@
 #include <vulkan/vulkan.h>
 
+#include <format>
+
 #ifndef KVK_WINDOWS
 #if defined(__WIN32__) || defined(_WIN32) || defined(WIN32)
 #define KVK_WINDOWS
@@ -22,6 +24,49 @@
 
 #define KVK_VA_ARGS(...) , ##__VA_ARGS__
 #define KVK_ERR(res_, sev_, msg_, ...) if (g_error_callback != nullptr) { g_error_callback(res_, sev_, std::format(msg_ KVK_VA_ARGS(__VA_ARGS__)).c_str(), KVK_FUNCTION); }
+
+template<>
+struct std::formatter<VkFormat> {
+    template<class ParseContext>
+    constexpr auto parse(ParseContext& ctx) {
+        return ctx.begin();
+    }
+
+    template<class FormatContext>
+    auto format(VkFormat const& vk_format, FormatContext& ctx) const {
+        return std::format_to(ctx.out(), "{}", static_cast<int32_t>(vk_format));
+    }
+};
+
+template<>
+struct std::formatter<VkColorSpaceKHR> {
+    template<class ParseContext>
+    constexpr auto parse(ParseContext& ctx) {
+        return ctx.begin();
+    }
+
+    template<class FormatContext>
+    auto format(VkColorSpaceKHR const& vk_color_space, FormatContext& ctx) const {
+        return std::format_to(ctx.out(), "{}", static_cast<int32_t>(vk_color_space));
+    }
+};
+
+template<>
+struct std::formatter<VkPresentModeKHR> {
+    template<class ParseContext>
+    constexpr auto parse(ParseContext& ctx) {
+        return ctx.begin();
+    }
+
+    template<class FormatContext>
+    auto format(VkPresentModeKHR const& vk_present_mode, FormatContext& ctx) const {
+        return std::format_to(ctx.out(), "{}", static_cast<int32_t>(vk_present_mode));
+    }
+};
+
+inline bool operator==(VkSurfaceFormatKHR const& a, VkSurfaceFormatKHR const& b) {
+    return (a.format == b.format) && (a.colorSpace == b.colorSpace);
+}
 
 inline bool operator<(VkPhysicalDeviceLimits const& a, VkPhysicalDeviceLimits const& b) {
     return (a.maxImageDimension1D < b.maxImageDimension1D) ||

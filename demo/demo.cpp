@@ -22,6 +22,11 @@ int main() {
         return 1;
     }
 
+    if (!SDL_Vulkan_LoadLibrary(nullptr)) {
+        std::cerr << "SDL_Vulkan_LoadLibrary Error: " << SDL_GetError() << std::endl;
+        return 1;
+    }
+
     SDL_Window* sdl_window = SDL_CreateWindow("kvk window", 1200, 900, SDL_WINDOW_VULKAN);
     if (sdl_window == nullptr) {
         std::cerr << "SDL_CreateWindow Error: " << SDL_GetError() << std::endl;
@@ -222,6 +227,73 @@ int main() {
             .queue_index = vk_device_queues[2].queue_index,
         },
     };
+
+    std::vector<VkImage> vk_swapchain_backbuffers;
+    vk_swapchain_backbuffers.reserve(3);
+
+    kvk::SwapchainReturns swapchain_returns;
+    if (kvk::create_swapchain(vk_device, {
+        .vk_physical_device = vk_physical_device,
+        .vk_surface = vk_surface,
+        .vk_image_usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+        .preferences = {
+            {
+                .image_count = 3,
+                .layer_count = 1,
+                .vk_surface_format = {
+                    .format = VK_FORMAT_B8G8R8A8_SRGB,
+                    .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+                },
+                .vk_present_mode = VK_PRESENT_MODE_MAILBOX_KHR,
+            },
+            {
+                .image_count = 3,
+                .layer_count = 1,
+                .vk_surface_format = {
+                    .format = VK_FORMAT_B8G8R8A8_SRGB,
+                    .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+                },
+                .vk_present_mode = VK_PRESENT_MODE_FIFO_RELAXED_KHR,
+            },
+            {
+                .image_count = 2,
+                .layer_count = 1,
+                .vk_surface_format = {
+                    .format = VK_FORMAT_B8G8R8A8_SRGB,
+                    .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+                },
+                .vk_present_mode = VK_PRESENT_MODE_FIFO_RELAXED_KHR,
+            },
+            {
+                .image_count = 3,
+                .layer_count = 1,
+                .vk_surface_format = {
+                    .format = VK_FORMAT_B8G8R8A8_SRGB,
+                    .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+                },
+                .vk_present_mode = VK_PRESENT_MODE_FIFO_KHR,
+            },
+            {
+                .image_count = 2,
+                .layer_count = 1,
+                .vk_surface_format = {
+                    .format = VK_FORMAT_B8G8R8A8_SRGB,
+                    .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+                },
+                .vk_present_mode = VK_PRESENT_MODE_FIFO_KHR,
+            },
+        },
+        .vk_image_sharing_mode = VK_SHARING_MODE_EXCLUSIVE,
+        .vk_queue_family_indices = {},
+        .vk_pre_transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
+        .vk_composite_alpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        .vk_clipped = VK_TRUE,
+    }, swapchain_returns) != VK_SUCCESS) {
+        std::cerr << "Failed to create Vulkan swapchain" << std::endl;
+        return 1;
+    }
+
+    VkSwapchainKHR vk_swapchain = swapchain_returns.vk_swapchain;
     
     bool running = true;
     SDL_Event sdl_event;
@@ -234,10 +306,12 @@ int main() {
         }
     }
 
+    vkDestroySwapchainKHR(vk_device, vk_swapchain, nullptr);
     vkDestroyDevice(vk_device, nullptr);
     vkDestroySurfaceKHR(vk_instance, vk_surface, nullptr);
     vkDestroyInstance(vk_instance, nullptr);
 
+    SDL_Vulkan_UnloadLibrary();
     SDL_DestroyWindow(sdl_window);
     SDL_Quit();
 }

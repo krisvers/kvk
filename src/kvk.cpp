@@ -4,20 +4,8 @@
 
 #include <vector>
 #include <format>
+#include <limits>
 #include <algorithm>
-
-template<>
-struct std::formatter<VkFormat> {
-    template<class ParseContext>
-    constexpr auto parse(ParseContext& ctx) {
-        return ctx.begin();
-    }
-
-    template<class FormatContext>
-    auto format(VkFormat const& vk_format, FormatContext& ctx) const {
-        return std::format_to(ctx.out(), "{}", static_cast<uint32_t>(vk_format));
-    }
-};
 
 namespace kvk {
 static MessageCallback g_error_callback = nullptr;
@@ -660,6 +648,160 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
     }
 
     return vk_result;
+}
+
+VkResult create_swapchain(VkDevice vk_device, SwapchainCreateInfo const& create_info, SwapchainReturns& returns) {
+    VkSurfaceCapabilitiesKHR vk_surface_capabilities;
+    VkResult vk_result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(create_info.vk_physical_device, create_info.vk_surface, &vk_surface_capabilities);
+    if (vk_result != VK_SUCCESS) {
+        KVK_ERR(vk_result, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Failed to get Vulkan physical device surface capabilities for swapchain creation");
+        return vk_result;
+    }
+
+    VkExtent2D vk_swapchain_extent = vk_surface_capabilities.currentExtent;
+    if (create_info.vk_extent.has_value()) {
+        if (create_info.vk_extent->width < vk_surface_capabilities.minImageExtent.width) {
+            KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Requested swapchain extent width {} is less than the surface's minimum supported width {}", create_info.vk_extent->width, vk_surface_capabilities.minImageExtent.width);
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+
+        if (create_info.vk_extent->width > vk_surface_capabilities.maxImageExtent.width) {
+            KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Requested swapchain extent width {} is greater than the surface's maximum supported width {}", create_info.vk_extent->width, vk_surface_capabilities.maxImageExtent.width);
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+
+        if (create_info.vk_extent->height < vk_surface_capabilities.minImageExtent.height) {
+            KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Requested swapchain extent height {} is less than the surface's minimum supported height {}", create_info.vk_extent->height, vk_surface_capabilities.minImageExtent.height);
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+
+        if (create_info.vk_extent->height > vk_surface_capabilities.maxImageExtent.height) {
+            KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Requested swapchain extent height {} is greater than the surface's maximum supported height {}", create_info.vk_extent->height, vk_surface_capabilities.maxImageExtent.height);
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+
+        vk_swapchain_extent = create_info.vk_extent.value();
+    }
+
+    uint32_t vk_surface_format_count;
+    vk_result = vkGetPhysicalDeviceSurfaceFormatsKHR(create_info.vk_physical_device, create_info.vk_surface, &vk_surface_format_count, nullptr);
+    if (vk_result != VK_SUCCESS) {
+        KVK_ERR(vk_result, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Failed to get Vulkan list of compatible surface formats for swapchain creation");
+        return vk_result;
+    }
+
+    std::vector<VkSurfaceFormatKHR> vk_surface_formats(vk_surface_format_count);
+    vk_result = vkGetPhysicalDeviceSurfaceFormatsKHR(create_info.vk_physical_device, create_info.vk_surface, &vk_surface_format_count, vk_surface_formats.data());
+    if (vk_result != VK_SUCCESS) {
+        KVK_ERR(vk_result, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Failed to get Vulkan list of compatible surface formats for swapchain creation");
+        return vk_result;
+    }
+
+    uint32_t vk_present_mode_count;
+    vk_result = vkGetPhysicalDeviceSurfacePresentModesKHR(create_info.vk_physical_device, create_info.vk_surface, &vk_present_mode_count, nullptr);
+    if (vk_result != VK_SUCCESS) {
+        KVK_ERR(vk_result, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Failed to get Vulkan list of compatible present modes for swapchain creation");
+        return vk_result;
+    }
+
+    std::vector<VkPresentModeKHR> vk_present_modes(vk_present_mode_count);
+    vk_result = vkGetPhysicalDeviceSurfacePresentModesKHR(create_info.vk_physical_device, create_info.vk_surface, &vk_present_mode_count, vk_present_modes.data());
+    if (vk_result != VK_SUCCESS) {
+        KVK_ERR(vk_result, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Failed to get Vulkan list of compatible present modes for swapchain creation");
+        return vk_result;
+    }
+
+    uint32_t chosen_preference = std::numeric_limits<uint32_t>::max();
+    for (uint32_t i = 0; i < create_info.preferences.size(); ++i) {
+        SwapchainPreference const& p = create_info.preferences[i];
+        if (p.image_count < vk_surface_capabilities.minImageCount) {
+            KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Swapchain preference at index {} requests image count {} which is less than the surface's minimum supported image count {}", i, p.image_count, vk_surface_capabilities.minImageCount);
+            continue;
+        }
+
+        if (p.layer_count > vk_surface_capabilities.maxImageArrayLayers) {
+            KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Swapchain preference at index {} requests layer count {} which is greater than the surface's maximum supported layer count {}", i, p.layer_count, vk_surface_capabilities.maxImageArrayLayers);
+            continue;
+        }
+
+        if (std::find(vk_surface_formats.begin(), vk_surface_formats.end(), p.vk_surface_format) == vk_surface_formats.end()) {
+            KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Swapchain preference at index {} requests unsupported surface format (format {}, color space {})", i, p.vk_surface_format.format, p.vk_surface_format.colorSpace);
+            continue;
+        }
+
+        if (std::find(vk_present_modes.begin(), vk_present_modes.end(), p.vk_present_mode) == vk_present_modes.end()) {
+            KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Swapchain preference at index {} requests unsupported present mode {}", i, p.vk_present_mode);
+            continue;
+        }
+
+        KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Swapchain preference at index {} selected for swapchain creation (image count {}, layer count {}, format {}, color space {}, present mode {})", i, p.image_count, p.layer_count, p.vk_surface_format.format, p.vk_surface_format.colorSpace, p.vk_present_mode);
+        chosen_preference = i;
+        break;
+    }
+
+    if (chosen_preference == std::numeric_limits<uint32_t>::max()) {
+        KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Failed to find a suitable swapchain preference for swapchain creation");
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    SwapchainPreference const& preference = create_info.preferences[chosen_preference];
+
+    VkSwapchainCreateInfoKHR vk_swapchain_create_info = {
+        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .pNext = create_info.vk_pnext,
+        .flags = create_info.vk_flags,
+        .surface = create_info.vk_surface,
+        .minImageCount = preference.image_count,
+        .imageFormat = preference.vk_surface_format.format,
+        .imageColorSpace = preference.vk_surface_format.colorSpace,
+        .imageExtent = vk_swapchain_extent,
+        .imageArrayLayers = preference.layer_count,
+        .imageUsage = create_info.vk_image_usage,
+        .imageSharingMode = create_info.vk_image_sharing_mode,
+        .queueFamilyIndexCount = static_cast<uint32_t>(create_info.vk_queue_family_indices.size()),
+        .pQueueFamilyIndices = create_info.vk_queue_family_indices.size() == 0 ? nullptr : create_info.vk_queue_family_indices.data(),
+        .preTransform = create_info.vk_pre_transform,
+        .compositeAlpha = create_info.vk_composite_alpha,
+        .presentMode = preference.vk_present_mode,
+        .clipped = create_info.vk_clipped,
+        .oldSwapchain = create_info.vk_old_swapchain,
+    };
+
+    VkSwapchainKHR vk_swapchain;
+    vk_result = vkCreateSwapchainKHR(vk_device, &vk_swapchain_create_info, nullptr, &vk_swapchain);
+    if (vk_result != VK_SUCCESS) {
+        KVK_ERR(vk_result, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Failed to create Vulkan swapchain");
+        return vk_result;
+    }
+
+    if (returns.vk_backbuffers.has_value()) {
+        uint32_t vk_image_count;
+        vk_result = vkGetSwapchainImagesKHR(vk_device, vk_swapchain, &vk_image_count, nullptr);
+        if (vk_result != VK_SUCCESS) {
+            KVK_ERR(vk_result, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Failed to get Vulkan swapchain backbuffer image count");
+            return vk_result;
+        }
+
+        if (returns.vk_backbuffers->size() != vk_image_count) {
+            if (!returns.vk_backbuffers->resize(vk_image_count)) {
+                vkDestroySwapchainKHR(vk_device, vk_swapchain, nullptr);
+                KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Failed to resize guest return array for swapchain backbuffer images to size {}", vk_image_count);
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+        }
+
+        vk_result = vkGetSwapchainImagesKHR(vk_device, vk_swapchain, &vk_image_count, &returns.vk_backbuffers.value()[0]);
+        if (vk_result != VK_SUCCESS) {
+            KVK_ERR(vk_result, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Failed to get Vulkan swapchain backbuffer images");
+            return vk_result;
+        }
+    }
+
+    returns.vk_swapchain = vk_swapchain;
+    returns.chosen_preference = chosen_preference;
+    returns.vk_current_extent = vk_swapchain_extent;
+
+    return VK_SUCCESS;
 }
 
 }
