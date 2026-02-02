@@ -5,6 +5,7 @@
 #include <vector>
 #include <stdexcept>
 #include <optional>
+#include <unordered_map>
 
 namespace kvk {
 
@@ -232,5 +233,68 @@ struct SwapchainReturns {
 };
 
 VkResult create_swapchain(VkDevice vk_device, SwapchainCreateInfo const& create_info, SwapchainReturns& returns);
-    
+
+namespace resource {
+
+uint32_t find_memory_type_index(VkPhysicalDevice vk_physical_device, std::vector<VkMemoryRequirements> const& vk_memory_requirementses, VkMemoryPropertyFlags vk_memory_properties);
+
+struct MonoAllocationResidentID {
+    union {
+        VkBuffer vk_buffer;
+        VkImage vk_image;
+    };
+
+    bool is_image;
+
+    bool operator==(MonoAllocationResidentID const& other) const {
+        return (is_image == other.is_image) && (is_image ? (vk_image == other.vk_image) : (vk_buffer == other.vk_buffer));
+    }
+};
+
+}
+
+}
+
+namespace std {
+
+template<>
+struct hash<kvk::resource::MonoAllocationResidentID> {
+    size_t operator()(kvk::resource::MonoAllocationResidentID const& id) const noexcept {
+        return reinterpret_cast<size_t>(id.vk_buffer);
+    }
+};
+
+}
+
+namespace kvk {
+
+namespace resource {
+
+struct MonoAllocationResident {
+    MonoAllocationResidentID id;
+    VkDeviceSize vk_heap_offset;
+    VkDeviceSize vk_alignment;
+    VkDeviceSize vk_size;
+};
+
+struct MonoAllocationHeap {
+    VkDeviceMemory vk_heap_memory;
+    VkDeviceSize vk_heap_size;
+
+    std::unordered_map<MonoAllocationResidentID, MonoAllocationResident> residents;
+};
+
+struct MonoAllocationCreateInfo {
+    VkPhysicalDevice vk_physical_device;
+    VkDeviceSize vk_minimum_heap_size;
+    VkMemoryPropertyFlags vk_memory_properties;
+
+    std::vector<MonoAllocationResidentID> const& residents;
+};
+
+VkResult mono_alloc_for_residents(VkDevice vk_device, MonoAllocationCreateInfo const& create_info, MonoAllocationHeap& heap);
+void mono_free_heap(VkDevice vk_device, MonoAllocationHeap& heap);
+
+}
+
 }

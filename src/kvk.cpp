@@ -820,4 +820,102 @@ VkResult create_swapchain(VkDevice vk_device, SwapchainCreateInfo const& create_
     return VK_SUCCESS;
 }
 
+namespace resource {
+
+/* adapted from my previous Odin code (https://github.com/krisvers/vulkan-sandbox/blob/e3a6738e790bcab9647da5218fe49cd728bf0ade/main.odin#L155) */
+uint32_t find_memory_type_index(VkPhysicalDevice vk_physical_device, std::vector<VkMemoryRequirements> const& vk_memory_requirementses, VkMemoryPropertyFlags vk_memory_properties) {
+    VkPhysicalDeviceMemoryProperties vk_physical_device_memory_properties;
+    vkGetPhysicalDeviceMemoryProperties(vk_physical_device, &vk_physical_device_memory_properties);
+
+    for (uint32_t i = 0; i < vk_physical_device_memory_properties.memoryTypeCount; ++i) {
+        if ((vk_physical_device_memory_properties.memoryTypes[i].propertyFlags & vk_memory_properties) != vk_memory_properties) {
+            continue;
+        }
+
+        bool incompatible = false;
+        for (VkMemoryRequirements const& r : vk_memory_requirementses) {
+            if ((r.memoryTypeBits & (1 << i)) == 0) {
+                incompatible = true;
+                break;
+            }
+        }
+
+        if (!incompatible) {
+            return i;
+        }
+    }
+
+    KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Failed to find compatible memory type index");
+    return VK_MAX_MEMORY_TYPES;
+}
+
+/* adapted from my previous Odin code (https://github.com/krisvers/vulkan-sandbox/blob/e3a6738e790bcab9647da5218fe49cd728bf0ade/main.odin#L200) */
+VkResult mono_alloc_for_residents(VkDevice vk_device, MonoAllocationCreateInfo const& create_info, MonoAllocationHeap& heap) {
+    uint32_t memory_type_index;
+    std::vector<VkMemoryRequirements> vk_memory_requirementses(create_info.residents.size());
+    std::vector<VkDeviceSize> vk_sizes(create_info.residents.size());
+    std::vector<VkDeviceSize> vk_offsets(create_info.residents.size());
+
+    VkDeviceSize total_size = 0;
+    for (size_t i = 0; i < create_info.residents.size(); ++i) {
+        if (create_info.residents[i].is_image) {
+            vkGetImageMemoryRequirements(vk_device, create_info.residents[i].vk_image, &vk_memory_requirementses[i]);
+        } else {
+            vkGetBufferMemoryRequirements(vk_device, create_info.residents[i].vk_buffer, &vk_memory_requirementses[i]);
+        }
+
+        VkDeviceSize r = total_size % vk_memory_requirementses[i].alignment;
+        total_size = total_size + (r == 0 ? 0 : vk_memory_requirementses[i].alignment - r);
+        vk_offsets[i] = total_size;
+        vk_sizes[i] = vk_memory_requirementses[i].size;
+        total_size += vk_sizes[i];
+    }
+
+    total_size = std::max(total_size, create_info.vk_minimum_heap_size);
+    memory_type_index = find_memory_type_index(create_info.vk_physical_device, vk_memory_requirementses, create_info.vk_memory_properties);
+    if (memory_type_index == VK_MAX_MEMORY_TYPES) {
+        KVK_ERR(VK_ERROR_MEMORY_MAP_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Failed to find suitable memory type for mono allocation");
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+
+    VkMemoryAllocateInfo vk_memory_allocate_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = total_size,
+        .memoryTypeIndex = memory_type_index,
+    };
+
+    VkDeviceMemory vk_heap_memory;
+    VkResult vk_result = vkAllocateMemory(vk_device, &vk_memory_allocate_info, nullptr, &vk_heap_memory);
+    if (vk_result != VK_SUCCESS) {
+        KVK_ERR(vk_result, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Failed to allocate memory for mono allocation");
+        return vk_result;
+    }
+
+    heap.vk_heap_memory = vk_heap_memory;
+    heap.vk_heap_size = total_size;
+    heap.residents = {};
+
+    for (size_t i = 0; i < create_info.residents.size(); ++i) {
+        heap.residents[create_info.residents[i]] = {
+            .id = create_info.residents[i],
+            .vk_heap_offset = vk_offsets[i],
+            .vk_alignment = vk_memory_requirementses[i].alignment,
+            .vk_size = vk_sizes[i],
+        };
+    }
+
+    return VK_SUCCESS;
+}
+
+void mono_free_heap(VkDevice vk_device, MonoAllocationHeap& heap) {
+    if (heap.vk_heap_memory != VK_NULL_HANDLE) {
+        vkFreeMemory(vk_device, heap.vk_heap_memory, nullptr);
+        heap.vk_heap_memory = VK_NULL_HANDLE;
+        heap.vk_heap_size = 0;
+        heap.residents.clear();
+    }
+}
+
+}
+
 }

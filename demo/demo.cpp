@@ -317,6 +317,33 @@ int main() {
         }
     }
 
+    VkBufferCreateInfo vk_test_buffer_create_info = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = 1024,
+        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+    };
+
+    VkBuffer vk_test_buffer;
+    if (vkCreateBuffer(vk_device, &vk_test_buffer_create_info, nullptr, &vk_test_buffer) != VK_SUCCESS) {
+        std::cerr << "Failed to create Vulkan test buffer" << std::endl;
+        return 1;
+    }
+
+    kvk::resource::MonoAllocationHeap test_heap;
+    if (kvk::resource::mono_alloc_for_residents(vk_device, {
+        .vk_physical_device = vk_physical_device,
+        .vk_minimum_heap_size = 0,
+        .vk_memory_properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        .residents = {
+            {
+                .vk_buffer = vk_test_buffer,
+            }
+        },
+    }, test_heap) != VK_SUCCESS) {
+        std::cerr << "Failed to create mono allocation for test buffer" << std::endl;
+        return 1;
+    }
+
     bool running = true;
     SDL_Event sdl_event;
     while (running) {
@@ -327,6 +354,9 @@ int main() {
             }
         }
     }
+
+    kvk::resource::mono_free_heap(vk_device, test_heap);
+    vkDestroyBuffer(vk_device, vk_test_buffer, nullptr);
 
     for (uint32_t i = 0; i < vk_swapchain_backbuffer_views.size(); ++i) {
         vkDestroyImageView(vk_device, vk_swapchain_backbuffer_views[i], nullptr);
