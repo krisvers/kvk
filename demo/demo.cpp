@@ -4,6 +4,10 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
+#define CELLULAR_AUTOMATA_GRID_WIDTH 256
+#define CELLULAR_AUTOMATA_GRID_HEIGHT 256
+#define CELLULAR_AUTOMATA_CELLS_PER_ELEMENT 32
+
 struct Queue {
     VkQueue vk_queue;
     uint32_t family_index;
@@ -27,7 +31,7 @@ int main() {
         return 1;
     }
 
-    SDL_Window* sdl_window = SDL_CreateWindow("kvk window", 1200, 900, SDL_WINDOW_VULKAN);
+    SDL_Window* sdl_window = SDL_CreateWindow("cellular automata", 1200, 900, SDL_WINDOW_VULKAN);
     if (sdl_window == nullptr) {
         std::cerr << "SDL_CreateWindow Error: " << SDL_GetError() << std::endl;
         return 1;
@@ -56,9 +60,9 @@ int main() {
 
     VkInstance vk_instance;
     if (kvk::create_instance({
-        .app_name = "kvk demo",
-        .app_version = VK_MAKE_VERSION(1, 0, 0),
-        .vk_version = VK_MAKE_API_VERSION(0, 1, 3, 0),
+        .app_name = "cellular automata",
+        .app_version = VK_MAKE_VERSION(0, 1, 0),
+        .vk_version = VK_MAKE_API_VERSION(0, 1, 2, 197),
         .vk_layers = {},
         .vk_extensions = {},
         .presets = {
@@ -119,7 +123,7 @@ int main() {
     if (kvk::create_device(vk_instance, {
         .vk_extensions = {},
         .physical_device_query = {
-            .minimum_vk_version = VK_MAKE_API_VERSION(0, 1, 3, 0),
+            .minimum_vk_version = VK_MAKE_API_VERSION(0, 1, 2, 197),
             .excluded_device_types = kvk::PhysicalDeviceTypeFlags::CPU | kvk::PhysicalDeviceTypeFlags::VIRTUAL_GPU | kvk::PhysicalDeviceTypeFlags::OTHER,
             .minimum_features = {
                 .shaderSampledImageArrayDynamicIndexing = true,
@@ -317,30 +321,43 @@ int main() {
         }
     }
 
-    VkBufferCreateInfo vk_test_buffer_create_info = {
+    VkBufferCreateInfo vk_cellular_automata_buffer_create_info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = 1024,
-        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        .size = CELLULAR_AUTOMATA_GRID_WIDTH * CELLULAR_AUTOMATA_GRID_HEIGHT / CELLULAR_AUTOMATA_CELLS_PER_ELEMENT,
+        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
     };
 
-    VkBuffer vk_test_buffer;
-    if (vkCreateBuffer(vk_device, &vk_test_buffer_create_info, nullptr, &vk_test_buffer) != VK_SUCCESS) {
-        std::cerr << "Failed to create Vulkan test buffer" << std::endl;
+    VkBuffer vk_cellular_automata_buffer0, vk_cellular_automata_buffer1;
+    if (vkCreateBuffer(vk_device, &vk_cellular_automata_buffer_create_info, nullptr, &vk_cellular_automata_buffer0) != VK_SUCCESS) {
+        std::cerr << "Failed to create CA buffer 0" << std::endl;
         return 1;
     }
 
-    kvk::resource::MonoAllocationHeap test_heap;
+    if (vkCreateBuffer(vk_device, &vk_cellular_automata_buffer_create_info, nullptr, &vk_cellular_automata_buffer1) != VK_SUCCESS) {
+        std::cerr << "Failed to create CA buffer 1" << std::endl;
+        return 1;
+    }
+
+    kvk::resource::MonoAllocationHeap cellular_automata_heap;
     if (kvk::resource::mono_alloc_for_residents(vk_device, {
         .vk_physical_device = vk_physical_device,
         .vk_minimum_heap_size = 0,
         .vk_memory_properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         .residents = {
             {
-                .vk_buffer = vk_test_buffer,
-            }
+                .vk_buffer = vk_cellular_automata_buffer0,
+            },
+            {
+                .vk_buffer = vk_cellular_automata_buffer1,
+            },
         },
-    }, test_heap) != VK_SUCCESS) {
-        std::cerr << "Failed to create mono allocation for test buffer" << std::endl;
+    }, cellular_automata_heap) != VK_SUCCESS) {
+        std::cerr << "Failed to create mono allocation for cellular automata buffers" << std::endl;
+        return 1;
+    }
+
+    if (kvk::resource::mono_bind_residents(vk_device, cellular_automata_heap) != VK_SUCCESS) {
+        std::cerr << "Failed to bind cellular automata resources to heap" << std::endl;
         return 1;
     }
 
@@ -355,8 +372,9 @@ int main() {
         }
     }
 
-    kvk::resource::mono_free_heap(vk_device, test_heap);
-    vkDestroyBuffer(vk_device, vk_test_buffer, nullptr);
+    vkDestroyBuffer(vk_device, vk_cellular_automata_buffer1, nullptr);
+    vkDestroyBuffer(vk_device, vk_cellular_automata_buffer0, nullptr);
+    kvk::resource::mono_free_heap(vk_device, cellular_automata_heap);
 
     for (uint32_t i = 0; i < vk_swapchain_backbuffer_views.size(); ++i) {
         vkDestroyImageView(vk_device, vk_swapchain_backbuffer_views[i], nullptr);

@@ -275,6 +275,7 @@ struct MonoAllocationResident {
     VkDeviceSize vk_heap_offset;
     VkDeviceSize vk_alignment;
     VkDeviceSize vk_size;
+    bool bound;
 };
 
 struct MonoAllocationHeap {
@@ -293,6 +294,9 @@ struct MonoAllocationCreateInfo {
 };
 
 VkResult mono_alloc_for_residents(VkDevice vk_device, MonoAllocationCreateInfo const& create_info, MonoAllocationHeap& heap);
+VkResult mono_bind_residents(VkDevice vk_device, MonoAllocationHeap& heap);
+
+/* NOTE: destroy all resident resources before freeing */
 void mono_free_heap(VkDevice vk_device, MonoAllocationHeap& heap);
 
 }

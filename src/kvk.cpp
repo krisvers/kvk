@@ -136,7 +136,7 @@ VkPhysicalDevice select_physical_device(VkInstance vk_instance, PhysicalDeviceQu
         VkPhysicalDeviceProperties physical_device_properties;
         vkGetPhysicalDeviceProperties(physical_device, &physical_device_properties);
         if (query.device_name_substring != nullptr) {
-            if (std::strstr(physical_device_properties.deviceName, query.device_name_substring) == nullptr) {
+            if (std::strstr(&physical_device_properties.deviceName[0], query.device_name_substring) == nullptr) {
                 continue;
             }
         }
@@ -146,7 +146,7 @@ VkPhysicalDevice select_physical_device(VkInstance vk_instance, PhysicalDeviceQu
         }
 
         if (physical_device_properties.apiVersion < query.minimum_vk_version) {
-            KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" has insufficient api version (found {}.{}.{}, required {}.{}.{})", physical_device_properties.deviceName, VK_API_VERSION_MAJOR(physical_device_properties.apiVersion), VK_API_VERSION_MINOR(physical_device_properties.apiVersion), VK_API_VERSION_PATCH(physical_device_properties.apiVersion), VK_API_VERSION_MAJOR(query.minimum_vk_version), VK_API_VERSION_MINOR(query.minimum_vk_version), VK_API_VERSION_PATCH(query.minimum_vk_version));
+            KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" has insufficient api version (found {}.{}.{}, required {}.{}.{})", &physical_device_properties.deviceName[0], VK_API_VERSION_MAJOR(physical_device_properties.apiVersion), VK_API_VERSION_MINOR(physical_device_properties.apiVersion), VK_API_VERSION_PATCH(physical_device_properties.apiVersion), VK_API_VERSION_MAJOR(query.minimum_vk_version), VK_API_VERSION_MINOR(query.minimum_vk_version), VK_API_VERSION_PATCH(query.minimum_vk_version));
             continue;
         }
 
@@ -161,7 +161,7 @@ VkPhysicalDevice select_physical_device(VkInstance vk_instance, PhysicalDeviceQu
         PhysicalDeviceFeaturesNext const* queried_features_next = reinterpret_cast<PhysicalDeviceFeaturesNext const*>(&query.minimum_features.robustBufferAccess);
         while (features_next <= features_final) {
             if (queried_features_next->a && !features_next->a) {
-                KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum feature at index {}", physical_device_properties.deviceName, feature_index * 2);
+                KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum feature at index {}", &physical_device_properties.deviceName[0], feature_index * 2);
                 satisfied = false;
                 break;
             }
@@ -176,7 +176,7 @@ VkPhysicalDevice select_physical_device(VkInstance vk_instance, PhysicalDeviceQu
         }
 
         if (physical_device_properties.limits < query.minimum_limits) {
-            KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum limits", physical_device_properties.deviceName);
+            KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum limits", &physical_device_properties.deviceName[0]);
             continue;
         }
 
@@ -191,7 +191,7 @@ VkPhysicalDevice select_physical_device(VkInstance vk_instance, PhysicalDeviceQu
             for (uint32_t j = 0; j < available_extension_count; ++j) {
                 if (std::strcmp(query.required_extensions[i].extensionName, available_extensions[j].extensionName) == 0) {
                     if (available_extensions[j].specVersion < query.required_extensions[i].specVersion) {
-                        KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" has extension \"{}\" but with insufficient spec version (found {}, required {})", physical_device_properties.deviceName, query.required_extensions[i].extensionName, available_extensions[j].specVersion, query.required_extensions[i].specVersion);
+                        KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" has extension \"{}\" but with insufficient spec version (found {}, required {})", &physical_device_properties.deviceName[0], query.required_extensions[i].extensionName, available_extensions[j].specVersion, query.required_extensions[i].specVersion);
                         satisfied = false;
                         break;
                     }
@@ -202,7 +202,7 @@ VkPhysicalDevice select_physical_device(VkInstance vk_instance, PhysicalDeviceQu
             }
 
             if (!found && satisfied) {
-                KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" is missing required extension \"{}\"", physical_device_properties.deviceName, query.required_extensions[i].extensionName);
+                KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" is missing required extension \"{}\"", &physical_device_properties.deviceName[0], query.required_extensions[i].extensionName);
                 satisfied = false;
                 break;
             }
@@ -218,7 +218,7 @@ VkPhysicalDevice select_physical_device(VkInstance vk_instance, PhysicalDeviceQu
             if ((format_properties.linearTilingFeatures & query.minimum_format_properties[i].minimum_properties.linearTilingFeatures) != query.minimum_format_properties[i].minimum_properties.linearTilingFeatures ||
                 (format_properties.optimalTilingFeatures & query.minimum_format_properties[i].minimum_properties.optimalTilingFeatures) != query.minimum_format_properties[i].minimum_properties.optimalTilingFeatures ||
                 (format_properties.bufferFeatures & query.minimum_format_properties[i].minimum_properties.bufferFeatures) != query.minimum_format_properties[i].minimum_properties.bufferFeatures) {
-                KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum format properties for format {}", physical_device_properties.deviceName, query.minimum_format_properties[i].format);
+                KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum format properties for format {}", &physical_device_properties.deviceName[0], query.minimum_format_properties[i].format);
                 satisfied = false;
                 break;
             }
@@ -239,7 +239,7 @@ VkPhysicalDevice select_physical_device(VkInstance vk_instance, PhysicalDeviceQu
                 &image_format_properties);
 
             if (vk_result != VK_SUCCESS) {
-                KVK_ERR(vk_result, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not support image format {} with the specified type, tiling, usage, and flags", physical_device_properties.deviceName, query.minimum_image_format_properties[i].format);
+                KVK_ERR(vk_result, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not support image format {} with the specified type, tiling, usage, and flags", &physical_device_properties.deviceName[0], query.minimum_image_format_properties[i].format);
                 satisfied = false;
                 break;
             }
@@ -251,7 +251,7 @@ VkPhysicalDevice select_physical_device(VkInstance vk_instance, PhysicalDeviceQu
                 image_format_properties.maxArrayLayers < query.minimum_image_format_properties[i].minimum_properties.maxArrayLayers ||
                 image_format_properties.sampleCounts < query.minimum_image_format_properties[i].minimum_properties.sampleCounts ||
                 image_format_properties.maxResourceSize < query.minimum_image_format_properties[i].minimum_properties.maxResourceSize) {
-                KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum image format properties for format {}", physical_device_properties.deviceName, query.minimum_image_format_properties[i].format);
+                KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum image format properties for format {}", &physical_device_properties.deviceName[0], query.minimum_image_format_properties[i].format);
                 satisfied = false;
                 break;
             }
@@ -264,12 +264,12 @@ VkPhysicalDevice select_physical_device(VkInstance vk_instance, PhysicalDeviceQu
         VkPhysicalDeviceMemoryProperties memory_properties;
         vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
         if (memory_properties.memoryTypeCount < query.minimum_memory_properties.memoryTypeCount) {
-            KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum memory type count", physical_device_properties.deviceName);
+            KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum memory type count", &physical_device_properties.deviceName[0]);
             continue;
         }
 
         if (memory_properties.memoryHeapCount < query.minimum_memory_properties.memoryHeapCount) {
-            KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum memory heap count", physical_device_properties.deviceName);
+            KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum memory heap count", &physical_device_properties.deviceName[0]);
             continue;
         }
 
@@ -305,7 +305,7 @@ VkPhysicalDevice select_physical_device(VkInstance vk_instance, PhysicalDeviceQu
             }
 
             if (!found) {
-                KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum queue family properties at index {}", physical_device_properties.deviceName, i);
+                KVK_ERR(VK_SUCCESS, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum queue family properties at index {}", &physical_device_properties.deviceName[0], i);
                 satisfied = false;
                 break;
             }
@@ -352,7 +352,7 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
 
             vkGetPhysicalDeviceProperties(physical_device, &physical_device_properties);
             if (create_info.physical_device_query.device_name_substring != nullptr) {
-                if (std::strstr(physical_device_properties.deviceName, create_info.physical_device_query.device_name_substring) == nullptr) {
+                if (std::strstr(&physical_device_properties.deviceName[0], create_info.physical_device_query.device_name_substring) == nullptr) {
                     continue;
                 }
             }
@@ -362,7 +362,7 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
             }
 
             if (physical_device_properties.apiVersion < create_info.physical_device_query.minimum_vk_version) {
-                KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" has insufficient api version (found {}.{}.{}, required {}.{}.{})", physical_device_properties.deviceName, VK_API_VERSION_MAJOR(physical_device_properties.apiVersion), VK_API_VERSION_MINOR(physical_device_properties.apiVersion), VK_API_VERSION_PATCH(physical_device_properties.apiVersion), VK_API_VERSION_MAJOR(create_info.physical_device_query.minimum_vk_version), VK_API_VERSION_MINOR(create_info.physical_device_query.minimum_vk_version), VK_API_VERSION_PATCH(create_info.physical_device_query.minimum_vk_version));
+                KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" has insufficient api version (found {}.{}.{}, required {}.{}.{})", &physical_device_properties.deviceName[0], VK_API_VERSION_MAJOR(physical_device_properties.apiVersion), VK_API_VERSION_MINOR(physical_device_properties.apiVersion), VK_API_VERSION_PATCH(physical_device_properties.apiVersion), VK_API_VERSION_MAJOR(create_info.physical_device_query.minimum_vk_version), VK_API_VERSION_MINOR(create_info.physical_device_query.minimum_vk_version), VK_API_VERSION_PATCH(create_info.physical_device_query.minimum_vk_version));
                 continue;
             }
 
@@ -376,7 +376,7 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
             PhysicalDeviceFeaturesNext const* queried_features_next = reinterpret_cast<PhysicalDeviceFeaturesNext const*>(&create_info.physical_device_query.minimum_features.robustBufferAccess);
             while (features_next <= features_final) {
                 if (queried_features_next->a && !features_next->a) {
-                    KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum feature at index {}", physical_device_properties.deviceName, feature_index * 2);
+                    KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum feature at index {}", &physical_device_properties.deviceName[0], feature_index * 2);
                     satisfied = false;
                     break;
                 }
@@ -391,7 +391,7 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
             }
 
             if (physical_device_properties.limits < create_info.physical_device_query.minimum_limits) {
-                KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum limits", physical_device_properties.deviceName);
+                KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum limits", &physical_device_properties.deviceName[0]);
                 continue;
             }
 
@@ -406,7 +406,7 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
                 for (uint32_t j = 0; j < available_extension_count; ++j) {
                     if (std::strcmp(create_info.physical_device_query.required_extensions[i].extensionName, available_extensions[j].extensionName) == 0) {
                         if (available_extensions[j].specVersion < create_info.physical_device_query.required_extensions[i].specVersion) {
-                            KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" has extension \"{}\" but with insufficient spec version (found {}, required {})", physical_device_properties.deviceName, create_info.physical_device_query.required_extensions[i].extensionName, available_extensions[j].specVersion, create_info.physical_device_query.required_extensions[i].specVersion);
+                            KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" has extension \"{}\" but with insufficient spec version (found {}, required {})", &physical_device_properties.deviceName[0], create_info.physical_device_query.required_extensions[i].extensionName, available_extensions[j].specVersion, create_info.physical_device_query.required_extensions[i].specVersion);
                             satisfied = false;
                             break;
                         }
@@ -417,7 +417,7 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
                 }
 
                 if (!found && satisfied) {
-                    KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" is missing required extension \"{}\"", physical_device_properties.deviceName, create_info.physical_device_query.required_extensions[i].extensionName);
+                    KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" is missing required extension \"{}\"", &physical_device_properties.deviceName[0], create_info.physical_device_query.required_extensions[i].extensionName);
                     satisfied = false;
                     break;
                 }
@@ -433,7 +433,7 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
                 if ((format_properties.linearTilingFeatures & create_info.physical_device_query.minimum_format_properties[i].minimum_properties.linearTilingFeatures) != create_info.physical_device_query.minimum_format_properties[i].minimum_properties.linearTilingFeatures ||
                     (format_properties.optimalTilingFeatures & create_info.physical_device_query.minimum_format_properties[i].minimum_properties.optimalTilingFeatures) != create_info.physical_device_query.minimum_format_properties[i].minimum_properties.optimalTilingFeatures ||
                     (format_properties.bufferFeatures & create_info.physical_device_query.minimum_format_properties[i].minimum_properties.bufferFeatures) != create_info.physical_device_query.minimum_format_properties[i].minimum_properties.bufferFeatures) {
-                    KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum format properties for format {}", physical_device_properties.deviceName, create_info.physical_device_query.minimum_format_properties[i].format);
+                    KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum format properties for format {}", &physical_device_properties.deviceName[0], create_info.physical_device_query.minimum_format_properties[i].format);
                     satisfied = false;
                     break;
                 }
@@ -454,7 +454,7 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
                     &image_format_properties);
 
                 if (vk_result != VK_SUCCESS) {
-                    KVK_ERR(vk_result, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not support image format {} with the specified type, tiling, usage, and flags", physical_device_properties.deviceName, create_info.physical_device_query.minimum_image_format_properties[i].format);
+                    KVK_ERR(vk_result, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not support image format {} with the specified type, tiling, usage, and flags", &physical_device_properties.deviceName[0], create_info.physical_device_query.minimum_image_format_properties[i].format);
                     satisfied = false;
                     break;
                 }
@@ -466,7 +466,7 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
                     image_format_properties.maxArrayLayers < create_info.physical_device_query.minimum_image_format_properties[i].minimum_properties.maxArrayLayers ||
                     image_format_properties.sampleCounts < create_info.physical_device_query.minimum_image_format_properties[i].minimum_properties.sampleCounts ||
                     image_format_properties.maxResourceSize < create_info.physical_device_query.minimum_image_format_properties[i].minimum_properties.maxResourceSize) {
-                    KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum image format properties for format {}", physical_device_properties.deviceName, create_info.physical_device_query.minimum_image_format_properties[i].format);
+                    KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum image format properties for format {}", &physical_device_properties.deviceName[0], create_info.physical_device_query.minimum_image_format_properties[i].format);
                     satisfied = false;
                     break;
                 }
@@ -478,12 +478,12 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
 
             vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
             if (memory_properties.memoryTypeCount < create_info.physical_device_query.minimum_memory_properties.memoryTypeCount) {
-                KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum memory type count", physical_device_properties.deviceName);
+                KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum memory type count", &physical_device_properties.deviceName[0]);
                 continue;
             }
 
             if (memory_properties.memoryHeapCount < create_info.physical_device_query.minimum_memory_properties.memoryHeapCount) {
-                KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum memory heap count", physical_device_properties.deviceName);
+                KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum memory heap count", &physical_device_properties.deviceName[0]);
                 continue;
             }
 
@@ -528,7 +528,7 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
                 }
 
                 if (!found) {
-                    KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum queue family properties at index {}", physical_device_properties.deviceName, i);
+                    KVK_ERR(VK_ERROR_INITIALIZATION_FAILED, VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT, "Physical device \"{}\" does not satisfy minimum queue family properties at index {}", &physical_device_properties.deviceName[0], i);
                     satisfied = false;
                     break;
                 }
@@ -907,8 +907,45 @@ VkResult mono_alloc_for_residents(VkDevice vk_device, MonoAllocationCreateInfo c
     return VK_SUCCESS;
 }
 
+VkResult mono_bind_residents(VkDevice vk_device, MonoAllocationHeap& heap) {
+    for (auto& p : heap.residents) {
+        if (p.second.bound) {
+            continue;
+        }
+
+        VkResult vk_result;
+        if (p.second.id.is_image) {
+            vk_result = vkBindImageMemory(vk_device, p.first.vk_image, heap.vk_heap_memory, p.second.vk_heap_offset);
+            if (vk_result != VK_SUCCESS) {
+                KVK_ERR(vk_result, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Failed to bind image to heap memory");
+                return vk_result;
+            }
+        } else {
+            vk_result = vkBindBufferMemory(vk_device, p.first.vk_buffer, heap.vk_heap_memory, p.second.vk_heap_offset);
+            if (vk_result != VK_SUCCESS) {
+                KVK_ERR(vk_result, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Failed to bind buffer to heap memory");
+                return vk_result;
+            }
+        }
+
+        p.second.bound = true;
+    }
+
+    return VK_SUCCESS;
+}
+
 void mono_free_heap(VkDevice vk_device, MonoAllocationHeap& heap) {
     if (heap.vk_heap_memory != VK_NULL_HANDLE) {
+        for (auto& p : heap.residents) {
+            if (!p.second.bound) {
+                continue;
+            }
+
+            if (p.first.is_image) {
+                
+            }
+        }
+
         vkFreeMemory(vk_device, heap.vk_heap_memory, nullptr);
         heap.vk_heap_memory = VK_NULL_HANDLE;
         heap.vk_heap_size = 0;
