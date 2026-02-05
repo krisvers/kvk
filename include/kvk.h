@@ -7,6 +7,10 @@
 #include <optional>
 #include <unordered_map>
 
+#ifdef KVK_USE_DXC
+#include <dxc/dxcapi.h>
+#endif
+
 namespace kvk {
 
 using MessageCallback = void(*)(VkResult vk_result, VkDebugUtilsMessageSeverityFlagsEXT severity, const char* message, const char* function);
@@ -298,6 +302,20 @@ VkResult mono_bind_residents(VkDevice vk_device, MonoAllocationHeap& heap);
 
 /* NOTE: destroy all resident resources before freeing */
 void mono_free_heap(VkDevice vk_device, MonoAllocationHeap& heap);
+
+}
+
+namespace shader {
+
+#ifdef KVK_USE_DXC
+
+namespace hlsl {
+
+VkResult compile(VkDevice vk_device, std::string const& source, std::string const& entry, VkShaderStageFlags vk_shader_stage_flags, VkShaderModule& vk_shader_module);
+
+}
+
+#endif
 
 }
 

@@ -955,4 +955,22 @@ void mono_free_heap(VkDevice vk_device, MonoAllocationHeap& heap) {
 
 }
 
+namespace shader {
+
+#ifdef KVK_USE_DXC
+
+namespace hlsl {
+
+/* adapted from https://github.com/krisvers/vulkan-sandbox/blob/e3a6738e790bcab9647da5218fe49cd728bf0ade/main.odin#L342 */
+VkResult compile(VkDevice vk_device, std::string const& source, std::string const& entry, VkShaderStageFlags vk_shader_stage_flags, VkShaderModule& vk_shader_module) {
+    /* TODO: implement */
+    return VK_ERROR_FEATURE_NOT_PRESENT;
+}
+
+}
+
+#endif
+
+}
+
 }
