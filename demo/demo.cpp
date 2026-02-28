@@ -10,9 +10,11 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
-#define CELLULAR_AUTOMATA_GRID_WIDTH 256
-#define CELLULAR_AUTOMATA_GRID_HEIGHT 256
-#define CELLULAR_AUTOMATA_CELLS_PER_BYTE 2
+#define CELLULAR_AUTOMATA_GRID_WIDTH 32
+#define CELLULAR_AUTOMATA_GRID_HEIGHT 32
+#define WINDOW_WIDTH 896
+#define WINDOW_HEIGHT 896
+#define CELLULAR_AUTOMATA_BYTES_PER_CELL 4
 
 struct Queue {
     VkQueue vk_queue;
@@ -29,10 +31,16 @@ struct Uniforms {
     uint32_t x;
     uint32_t y;
     uint32_t v;
+    uint32_t tick;
+    uint32_t bytes_per_cell;
+    uint32_t width;
+    uint32_t height;
 };
 
 int main() {
     /* setup SDL3 and window */
+    SDL_SetHint(SDL_HINT_MAC_SCROLL_MOMENTUM, "1");
+
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         std::cerr << "SDL_Init Error: " << SDL_GetError() << std::endl;
         return 1;
@@ -43,7 +51,7 @@ int main() {
         return 1;
     }
 
-    SDL_Window* sdl_window = SDL_CreateWindow("cellular automata", 1200, 900, SDL_WINDOW_VULKAN);
+    SDL_Window* sdl_window = SDL_CreateWindow("cellular automata", WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_VULKAN);
     if (sdl_window == nullptr) {
         std::cerr << "SDL_CreateWindow Error: " << SDL_GetError() << std::endl;
         return 1;
@@ -151,7 +159,7 @@ int main() {
                 {
                     .format = VK_FORMAT_B8G8R8A8_SRGB,
                     .minimum_properties = {
-                        .optimalTilingFeatures = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT,
+                        .optimalTilingFeatures = VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT,
                     },
                 },
                 {
@@ -256,11 +264,14 @@ int main() {
 
     /* setup swapchain */
     std::vector<VkImage> vk_swapchain_backbuffers;
-    kvk::SwapchainReturns swapchain_returns;
+    kvk::SwapchainReturns swapchain_returns = {
+        .vk_backbuffers = vk_swapchain_backbuffers,
+    };
+
     if (kvk::create_swapchain(vk_device, {
         .vk_physical_device = vk_physical_device,
         .vk_surface = vk_surface,
-        .vk_image_usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+        .vk_image_usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
         .preferences = {
             {
                 .image_count = 3,
@@ -319,6 +330,7 @@ int main() {
     }
 
     VkSwapchainKHR vk_swapchain = swapchain_returns.vk_swapchain;
+    /*
     std::vector<VkImageView> vk_swapchain_backbuffer_views(vk_swapchain_backbuffers.size());
     for (uint32_t i = 0; i < vk_swapchain_backbuffers.size(); ++i) {
         VkImageViewCreateInfo vk_image_view_create_info = {
@@ -346,11 +358,35 @@ int main() {
             return 1;
         }
     }
+    */
+
+    /* setup swapchain synchronization primitives */
+    VkSemaphoreCreateInfo vk_swapchain_image_acquisition_semaphore_create_info = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+    };
+
+    VkSemaphore vk_swapchain_image_acquisition_semaphore;
+    if (vkCreateSemaphore(vk_device, &vk_swapchain_image_acquisition_semaphore_create_info, nullptr, &vk_swapchain_image_acquisition_semaphore) != VK_SUCCESS) {
+        std::cerr << "Failed to create swapchain image acquisition semaphore" << std::endl;
+        return 1;
+    }
+
+    std::vector<VkSemaphore> vk_swapchain_image_finished_semaphores(vk_swapchain_backbuffers.size());
+    for (size_t i = 0; i < vk_swapchain_backbuffers.size(); ++i) {
+        VkSemaphoreCreateInfo vk_swapchain_image_finished_semaphore_create_info = {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        };
+
+        if (vkCreateSemaphore(vk_device, &vk_swapchain_image_finished_semaphore_create_info, nullptr, &vk_swapchain_image_finished_semaphores[i]) != VK_SUCCESS) {
+            std::cerr << "Failed to create swapchain image finished semaphore " << i << std::endl;
+            return 1;
+        }
+    }
 
     /* setup cellular automata resources and allocate heaps */
     VkBufferCreateInfo vk_cellular_automata_buffer_create_info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = CELLULAR_AUTOMATA_GRID_WIDTH * CELLULAR_AUTOMATA_GRID_HEIGHT / CELLULAR_AUTOMATA_CELLS_PER_BYTE,
+        .size = CELLULAR_AUTOMATA_GRID_WIDTH * CELLULAR_AUTOMATA_GRID_HEIGHT * CELLULAR_AUTOMATA_BYTES_PER_CELL,
         .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
     };
 
@@ -368,7 +404,7 @@ int main() {
     VkImageCreateInfo vk_cellular_automata_render_image_create_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
-        .format = VK_FORMAT_B8G8R8A8_SRGB,
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
         .extent = {
             .width = CELLULAR_AUTOMATA_GRID_WIDTH,
             .height = CELLULAR_AUTOMATA_GRID_HEIGHT,
@@ -416,6 +452,36 @@ int main() {
         return 1;
     }
 
+    kvk::resource::MonoAllocationResident const& cellular_automata_buffer0_resident = cellular_automata_heap.residents[{ .vk_buffer = vk_cellular_automata_buffer0 }];
+    kvk::resource::MonoAllocationResident const& cellular_automata_buffer1_resident = cellular_automata_heap.residents[{ .vk_buffer = vk_cellular_automata_buffer1 }];
+
+    /* setup render image view */
+    VkImageViewCreateInfo vk_cellular_automata_render_image_view_create_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = vk_cellular_automata_render_image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .components = {
+            .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+        },
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+    };
+
+    VkImageView vk_cellular_automata_render_image_view;
+    if (vkCreateImageView(vk_device, &vk_cellular_automata_render_image_view_create_info, nullptr, &vk_cellular_automata_render_image_view) != VK_SUCCESS) {
+        std::cerr << "Failed to create cellular automata render image view" << std::endl;
+        return 1;
+    }
+
     /* setup uniform resources and allocate heap */
     VkBufferCreateInfo vk_uniform_buffer_create_info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -449,8 +515,16 @@ int main() {
         return 1;
     }
 
+    kvk::resource::MonoAllocationResident const& uniform_buffer_resident = uniform_heap.residents[{ .vk_buffer = vk_uniform_buffer }];
+
+    Uniforms* p_uniforms;
+    if (vkMapMemory(vk_device, uniform_heap.vk_heap_memory, uniform_buffer_resident.vk_heap_offset, uniform_buffer_resident.vk_size, 0, reinterpret_cast<void**>(&p_uniforms)) != VK_SUCCESS) {
+        std::cerr << "Failed to map uniform heap memory for uniform buffer" << std::endl;
+        return 1;
+    }
+
     /* prepare for pipeline creation */
-    VkDescriptorSetLayoutBinding vk_compute_pass0_0_descriptor_set_layout_bindings[4] = {
+    VkDescriptorSetLayoutBinding vk_compute_pass0_0_descriptor_set_layout0_bindings[4] = {
         {
             .binding = 0,
             .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
@@ -465,26 +539,26 @@ int main() {
         },
         {
             .binding = 2,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
             .descriptorCount = 1,
             .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
         },
         {
             .binding = 3,
-            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
             .descriptorCount = 1,
             .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
         },
     };
 
-    VkDescriptorSetLayoutCreateInfo vk_compute_pass0_0_descriptor_set_layout_create_info = {
+    VkDescriptorSetLayoutCreateInfo vk_compute_pass0_0_descriptor_set_layout0_create_info = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = sizeof(vk_compute_pass0_0_descriptor_set_layout_bindings) / sizeof(VkDescriptorSetLayoutBinding),
-        .pBindings = &vk_compute_pass0_0_descriptor_set_layout_bindings[0],
+        .bindingCount = sizeof(vk_compute_pass0_0_descriptor_set_layout0_bindings) / sizeof(VkDescriptorSetLayoutBinding),
+        .pBindings = &vk_compute_pass0_0_descriptor_set_layout0_bindings[0],
     };
 
-    VkDescriptorSetLayout vk_compute_pass0_0_descriptor_set_layout;
-    if (vkCreateDescriptorSetLayout(vk_device, &vk_compute_pass0_0_descriptor_set_layout_create_info, nullptr, &vk_compute_pass0_0_descriptor_set_layout) != VK_SUCCESS) {
+    VkDescriptorSetLayout vk_compute_pass0_0_descriptor_set_layout0;
+    if (vkCreateDescriptorSetLayout(vk_device, &vk_compute_pass0_0_descriptor_set_layout0_create_info, nullptr, &vk_compute_pass0_0_descriptor_set_layout0) != VK_SUCCESS) {
         std::cerr << "Failed to create compute pass 0.0 descriptor set layout" << std::endl;
         return 1;
     }
@@ -492,7 +566,7 @@ int main() {
     VkPipelineLayoutCreateInfo vk_compute_pass0_0_pipeline_layout_create_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount = 1,
-        .pSetLayouts = &vk_compute_pass0_0_descriptor_set_layout,
+        .pSetLayouts = &vk_compute_pass0_0_descriptor_set_layout0,
     };
 
     VkPipelineLayout vk_compute_pass0_0_pipeline_layout;
@@ -502,11 +576,11 @@ int main() {
     }
 
     /* load and compile shader */
-    std::vector<uint32_t> compute0_0_shader_spv(std::filesystem::file_size("cellular_automata.hlsl.bin") / sizeof(uint32_t));
+    std::vector<uint32_t> compute0_0_shader_spv(std::filesystem::file_size("cellular_automata.bin") / sizeof(uint32_t));
     {
-        std::ifstream in("cellular_automata.hlsl.bin");
+        std::ifstream in("cellular_automata.bin");
         if (!in.good()) {
-            std::cerr << "Failed to open cellular_automata.hlsl.bin" << std::endl;
+            std::cerr << "Failed to open cellular_automata.bin" << std::endl;
             return 1;
         }
 
@@ -545,17 +619,525 @@ int main() {
     }
 
     /* setup descriptor sets */
+    VkDescriptorPoolSize vk_compute_pass0_0_descriptor_pool0_sizes[3] = {
+        {
+            .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .descriptorCount = 2,
+        },
+        {
+            .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorCount = 1,
+        },
+        {
+            .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .descriptorCount = 1,
+        },
+    };
 
+    VkDescriptorPoolCreateInfo vk_compute_pass0_0_descriptor_pool0_create_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .maxSets = 1,
+        .poolSizeCount = sizeof(vk_compute_pass0_0_descriptor_pool0_sizes) / sizeof(VkDescriptorPoolSize),
+        .pPoolSizes = &vk_compute_pass0_0_descriptor_pool0_sizes[0],
+    };
+    
+    VkDescriptorPool vk_compute_pass0_0_descriptor_pool0;
+    if (vkCreateDescriptorPool(vk_device, &vk_compute_pass0_0_descriptor_pool0_create_info, nullptr, &vk_compute_pass0_0_descriptor_pool0) != VK_SUCCESS) {
+        std::cerr << "Failed to create compute pass 0.0 descriptor pool 0" << std::endl;
+        return 1;
+    }
+
+    VkDescriptorSetAllocateInfo vk_compute_pass0_0_descriptor_pool0_set0_allocate_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = vk_compute_pass0_0_descriptor_pool0,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &vk_compute_pass0_0_descriptor_set_layout0,
+    };
+
+    VkDescriptorSet vk_compute_pass0_0_descriptor_pool0_set0;
+    if (vkAllocateDescriptorSets(vk_device, &vk_compute_pass0_0_descriptor_pool0_set0_allocate_info, &vk_compute_pass0_0_descriptor_pool0_set0) != VK_SUCCESS) {
+        std::cerr << "Failed to allocate compute pass 0.0 descriptor pool 0 set 0" << std::endl;
+        return 1;
+    }
+
+    /* setup synchronization primitives */
+    VkFenceCreateInfo vk_compute_pass0_0_finished_fence_create_info = {
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .flags = VK_FENCE_CREATE_SIGNALED_BIT,
+    };
+
+    VkFence vk_compute_pass0_0_finished_fence;
+    if (vkCreateFence(vk_device, &vk_compute_pass0_0_finished_fence_create_info, nullptr, &vk_compute_pass0_0_finished_fence) != VK_SUCCESS) {
+        std::cerr << "Failed to create compute pass 0.0 finished fence" << std::endl;
+        return 1;
+    }
+
+    VkBuffer vk_cellular_automata_input_buffer = vk_cellular_automata_buffer1;
+    VkBuffer vk_cellular_automata_output_buffer = vk_cellular_automata_buffer0;
+
+    int32_t view_x = 0;
+    int32_t view_y = 0;
+    float mouse_x = 0;
+    float mouse_y = 0;
+    float zoom = 1.0f;
+
+    uint32_t ticks_per_frame = 1;
+    uint32_t tick = 0;
+    uint32_t game_tick = 0;
+    uint32_t type = 1;
     bool running = true;
+    bool left_click = false;
+    bool right_click = false;
+    bool paused = false;
     SDL_Event sdl_event;
     while (running) {
+        SDL_Delay(1);
+        p_uniforms->v = (p_uniforms->v & ~0x3f) | (paused ? 0x20 : 0x00) | (right_click ? 0x58 | (type & 0x7) : 0x00);
+
         while (SDL_PollEvent(&sdl_event)) {
-            if (sdl_event.type == SDL_EVENT_QUIT) {
-                running = false;
+            switch (sdl_event.type) {
+                case SDL_EVENT_QUIT:
+                    running = false;
+                    break;
+                case SDL_EVENT_WINDOW_MOUSE_ENTER:
+                    SDL_HideCursor();
+                    break;
+                case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+                    SDL_ShowCursor();
+                    break;
+                case SDL_EVENT_MOUSE_BUTTON_DOWN:
+                case SDL_EVENT_MOUSE_BUTTON_UP:
+                    if (sdl_event.button.button == SDL_BUTTON_LEFT) {
+                        left_click = sdl_event.button.down;
+                        if (left_click) {
+                            p_uniforms->v = (p_uniforms->v & ~0x1f) | 0x18 | (type & 0x7);
+                        } else {
+                            p_uniforms->v &= ~0x1f;
+                        }
+                    } else if (sdl_event.button.button == SDL_BUTTON_RIGHT) {
+                        right_click = sdl_event.button.down;
+                    }
+                    break;
+                case SDL_EVENT_KEY_DOWN:
+                    switch (sdl_event.key.key) {
+                        case SDLK_SPACE:
+                            if (!sdl_event.key.repeat) {
+                                paused = !paused;
+                            }
+                            break;
+                        case SDLK_1:
+                        case SDLK_2:
+                        case SDLK_3:
+                        case SDLK_4:
+                        case SDLK_5:
+                        case SDLK_6:
+                            if (!sdl_event.key.repeat) {
+                                type = sdl_event.key.key - SDLK_0;
+                            }
+                            break;
+                        case SDLK_RIGHT:
+                            p_uniforms->v &= ~0x20;
+                            break;
+                        case SDLK_UP:
+                            if (!sdl_event.key.repeat) {
+                                ticks_per_frame++;
+                            }
+                            break;
+                        case SDLK_DOWN:
+                            if (!sdl_event.key.repeat) {
+                                if (ticks_per_frame != 1) {
+                                    ticks_per_frame--;
+                                }
+                            }
+                            break;
+                        case SDLK_EQUALS:
+                            zoom *= 1.15f;
+                            break;
+                        case SDLK_MINUS:
+                            zoom /= 1.15f;
+                            break;
+                    }
+                    break;
+                case SDL_EVENT_MOUSE_MOTION:
+                    mouse_x = sdl_event.motion.x;
+                    mouse_y = sdl_event.motion.y;
+                    break;
+                case SDL_EVENT_MOUSE_WHEEL:
+                    view_x += sdl_event.wheel.x;
+                    view_y -= sdl_event.wheel.y;
+                    break;
+            }
+
+            if (!running) {
                 break;
             }
         }
+
+        p_uniforms->x = mouse_x * static_cast<float>(CELLULAR_AUTOMATA_GRID_WIDTH) / WINDOW_WIDTH;
+        p_uniforms->y = mouse_y * static_cast<float>(CELLULAR_AUTOMATA_GRID_HEIGHT) / WINDOW_HEIGHT;
+        p_uniforms->tick = game_tick;
+        p_uniforms->bytes_per_cell = CELLULAR_AUTOMATA_BYTES_PER_CELL;
+        p_uniforms->width = CELLULAR_AUTOMATA_GRID_WIDTH;
+        p_uniforms->height = CELLULAR_AUTOMATA_GRID_HEIGHT;
+
+        if (vkWaitForFences(vk_device, 1, &vk_compute_pass0_0_finished_fence, false, std::numeric_limits<uint64_t>::max()) != VK_SUCCESS) {
+            std::cerr << "Failed to wait for compute pass 0.0 finished fence" << std::endl;
+            return 1;
+        }
+
+        if (vkResetFences(vk_device, 1, &vk_compute_pass0_0_finished_fence) != VK_SUCCESS) {
+            std::cerr << "Failed to reset compute pass 0.0 finished fence" << std::endl;
+            return 1;
+        }
+
+        /* acquire swapchain image */
+        uint32_t vk_swapchain_backbuffer_index;
+        if (tick % ticks_per_frame == 0) {
+            if (vkAcquireNextImageKHR(vk_device, vk_swapchain, std::numeric_limits<uint64_t>::max(), vk_swapchain_image_acquisition_semaphore, nullptr, &vk_swapchain_backbuffer_index) != VK_SUCCESS) {
+                std::cerr << "Failed to acquire swapchain image index" << std::endl;
+                return 1;
+            }
+        }
+
+        /* prepare for compute pass 0.0 */
+        {
+            VkBuffer vk_tmp_buffer = vk_cellular_automata_input_buffer;
+            vk_cellular_automata_input_buffer = vk_cellular_automata_output_buffer;
+            vk_cellular_automata_output_buffer = vk_tmp_buffer;
+        }
+
+        kvk::resource::MonoAllocationResident const& cellular_automata_input_buffer_resident = cellular_automata_heap.residents[{ .vk_buffer = vk_cellular_automata_input_buffer }];
+        kvk::resource::MonoAllocationResident const& cellular_automata_output_buffer_resident = cellular_automata_heap.residents[{ .vk_buffer = vk_cellular_automata_output_buffer }];
+
+        /* write to descriptor sets */
+        VkDescriptorBufferInfo vk_compute_pass0_0_descriptor_pool0_set0_binding0_buffer_info = {
+            .buffer = vk_cellular_automata_input_buffer,
+            .offset = 0,
+            .range = cellular_automata_input_buffer_resident.vk_size,
+        };
+
+        VkDescriptorBufferInfo vk_compute_pass0_0_descriptor_pool0_set0_binding1_buffer_info = {
+            .buffer = vk_cellular_automata_output_buffer,
+            .offset = 0,
+            .range = cellular_automata_output_buffer_resident.vk_size,
+        };
+
+        VkDescriptorBufferInfo vk_compute_pass0_0_descriptor_pool0_set0_binding2_buffer_info = {
+            .buffer = vk_uniform_buffer,
+            .offset = 0,
+            .range = uniform_buffer_resident.vk_size,
+        };
+
+        VkDescriptorImageInfo vk_compute_pass0_0_descriptor_pool0_set0_binding3_image_info = {
+            .sampler = nullptr,
+            .imageView = vk_cellular_automata_render_image_view,
+            .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+        };
+
+        VkWriteDescriptorSet vk_compute_pass0_0_descriptor_pool0_set0_writes[4] = {
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = vk_compute_pass0_0_descriptor_pool0_set0,
+                .dstBinding = 0,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .pBufferInfo = &vk_compute_pass0_0_descriptor_pool0_set0_binding0_buffer_info,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = vk_compute_pass0_0_descriptor_pool0_set0,
+                .dstBinding = 1,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .pBufferInfo = &vk_compute_pass0_0_descriptor_pool0_set0_binding1_buffer_info,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = vk_compute_pass0_0_descriptor_pool0_set0,
+                .dstBinding = 2,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .pBufferInfo = &vk_compute_pass0_0_descriptor_pool0_set0_binding2_buffer_info,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = vk_compute_pass0_0_descriptor_pool0_set0,
+                .dstBinding = 3,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                .pImageInfo = &vk_compute_pass0_0_descriptor_pool0_set0_binding3_image_info,
+            },
+        };
+
+        vkUpdateDescriptorSets(vk_device, sizeof(vk_compute_pass0_0_descriptor_pool0_set0_writes) / sizeof(VkWriteDescriptorSet), &vk_compute_pass0_0_descriptor_pool0_set0_writes[0], 0, nullptr);
+
+        if (vkResetCommandPool(vk_device, vk_compute_queue0_command_pool0, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT) != VK_SUCCESS) {
+            std::cerr << "Failed to reset compute queue 0 command pool 0" << std::endl;
+            return 1;
+        }
+
+        VkCommandBufferBeginInfo vk_compute_queue0_command_pool0_command_buffer0_begin_info = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        };
+
+        if (vkBeginCommandBuffer(vk_compute_queue0_command_pool0_command_buffer0, &vk_compute_queue0_command_pool0_command_buffer0_begin_info) != VK_SUCCESS) {
+            std::cerr << "Failed to begin compute queue 0 command pool 0 command buffer 0" << std::endl;
+            return 1;
+        }
+
+        /* transition all resources */
+        VkBufferMemoryBarrier vk_compute_pass0_0_initial_transition_buffer_memory_barriers[3] = {
+            {
+                .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+                .srcAccessMask = 0,
+                .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+                .srcQueueFamilyIndex = queues.compute0_0.family_index,
+                .dstQueueFamilyIndex = queues.compute0_0.family_index,
+                .buffer = vk_cellular_automata_input_buffer,
+                .offset = 0,
+                .size = cellular_automata_input_buffer_resident.vk_size,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+                .srcAccessMask = 0,
+                .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                .srcQueueFamilyIndex = queues.compute0_0.family_index,
+                .dstQueueFamilyIndex = queues.compute0_0.family_index,
+                .buffer = vk_cellular_automata_output_buffer,
+                .offset = 0,
+                .size = cellular_automata_output_buffer_resident.vk_size,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+                .srcAccessMask = 0,
+                .dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT,
+                .srcQueueFamilyIndex = queues.compute0_0.family_index,
+                .dstQueueFamilyIndex = queues.compute0_0.family_index,
+                .buffer = vk_uniform_buffer,
+                .offset = 0,
+                .size = uniform_buffer_resident.vk_size,
+            },
+        };
+
+        VkImageMemoryBarrier vk_compute_pass0_0_initial_transition_image_memory_barriers[1] = {
+            {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                .srcAccessMask = 0,
+                .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+                .srcQueueFamilyIndex = queues.compute0_0.family_index,
+                .dstQueueFamilyIndex = queues.compute0_0.family_index,
+                .image = vk_cellular_automata_render_image,
+                .subresourceRange = {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+            },
+        };
+
+        vkCmdPipelineBarrier(vk_compute_queue0_command_pool0_command_buffer0,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            0, 0, nullptr,
+            sizeof(vk_compute_pass0_0_initial_transition_buffer_memory_barriers) / sizeof(VkBufferMemoryBarrier),
+            &vk_compute_pass0_0_initial_transition_buffer_memory_barriers[0],
+            sizeof(vk_compute_pass0_0_initial_transition_image_memory_barriers) / sizeof(VkImageMemoryBarrier),
+            &vk_compute_pass0_0_initial_transition_image_memory_barriers[0]
+        );
+
+        vkCmdBindPipeline(vk_compute_queue0_command_pool0_command_buffer0, VK_PIPELINE_BIND_POINT_COMPUTE, vk_compute_pass0_0_pipeline);
+        vkCmdBindDescriptorSets(vk_compute_queue0_command_pool0_command_buffer0, VK_PIPELINE_BIND_POINT_COMPUTE, vk_compute_pass0_0_pipeline_layout, 0, 1, &vk_compute_pass0_0_descriptor_pool0_set0, 0, nullptr);
+        vkCmdDispatch(vk_compute_queue0_command_pool0_command_buffer0, CELLULAR_AUTOMATA_GRID_WIDTH / 8, CELLULAR_AUTOMATA_GRID_HEIGHT / 8, 1);
+
+        VkImageMemoryBarrier vk_compute_pass0_0_prepare_for_blit_image_memory_barriers[2] = {
+            {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                .srcAccessMask = 0,
+                .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+                .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+                .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                .srcQueueFamilyIndex = queues.compute0_0.family_index,
+                .dstQueueFamilyIndex = queues.compute0_0.family_index,
+                .image = vk_cellular_automata_render_image,
+                .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                .srcAccessMask = 0,
+                .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                .srcQueueFamilyIndex = queues.compute0_0.family_index,
+                .dstQueueFamilyIndex = queues.compute0_0.family_index,
+                .image = vk_swapchain_backbuffers[vk_swapchain_backbuffer_index],
+                .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+            },
+        };
+
+        vkCmdPipelineBarrier(vk_compute_queue0_command_pool0_command_buffer0,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+            0, nullptr,
+            0, nullptr,
+            (tick % ticks_per_frame == 0) ? 2 : 1,
+            &vk_compute_pass0_0_prepare_for_blit_image_memory_barriers[0]
+        );
+        
+        if (tick % ticks_per_frame == 0) {
+            VkClearColorValue vk_swapchain_backbuffer_clear_color = {
+                .float32 = { 0.0f, 0.0f, 0.0f, 1.0f }
+            };
+
+            VkImageSubresourceRange vk_swapchain_backbuffer_clear_range = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            };
+
+            vkCmdClearColorImage(vk_compute_queue0_command_pool0_command_buffer0, vk_swapchain_backbuffers[vk_swapchain_backbuffer_index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &vk_swapchain_backbuffer_clear_color, 1, &vk_swapchain_backbuffer_clear_range);
+
+            VkImageBlit vk_compute_pass0_0_blit_render_image_to_swapchain = {
+                .srcSubresource = {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .mipLevel = 0,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+                .srcOffsets = {
+                    {
+                        .x = 0,
+                        .y = 0,
+                        .z = 0,
+                    },
+                    {
+                        .x = CELLULAR_AUTOMATA_GRID_WIDTH,
+                        .y = CELLULAR_AUTOMATA_GRID_HEIGHT,
+                        .z = 1,
+                    },
+                },
+                .dstSubresource = {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .mipLevel = 0,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+                .dstOffsets = {
+                    {
+                        .x = 0,
+                        .y = 0,
+                        .z = 0,
+                    },
+                    {
+                        .x = WINDOW_WIDTH,
+                        .y = WINDOW_HEIGHT,
+                        .z = 1,
+                    },
+                },
+            };
+
+            vkCmdBlitImage(vk_compute_queue0_command_pool0_command_buffer0, vk_cellular_automata_render_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, vk_swapchain_backbuffers[vk_swapchain_backbuffer_index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &vk_compute_pass0_0_blit_render_image_to_swapchain, VK_FILTER_NEAREST);
+
+            VkImageMemoryBarrier vk_swapchain_backbuffer_prepare_for_present_image_memory_barrier =
+            {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                .srcAccessMask = 0,
+                .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+                .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                .srcQueueFamilyIndex = queues.compute0_0.family_index,
+                .dstQueueFamilyIndex = queues.compute0_0.family_index,
+                .image = vk_swapchain_backbuffers[vk_swapchain_backbuffer_index],
+                .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                .layerCount = 1,
+                },
+            };
+
+            vkCmdPipelineBarrier(vk_compute_queue0_command_pool0_command_buffer0,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                0, nullptr,
+                0, nullptr,
+                1,
+                &vk_swapchain_backbuffer_prepare_for_present_image_memory_barrier
+            );
+        }
+
+        if (vkEndCommandBuffer(vk_compute_queue0_command_pool0_command_buffer0) != VK_SUCCESS) {
+            std::cerr << "Failed to end compute queue 0 command pool 0 command buffer 0" << std::endl;
+            return 1;
+        }
+
+        VkPipelineStageFlags vk_compute_queue0_submit_wait_stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+
+        VkSubmitInfo vk_compute_queue0_submit_info = {
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &vk_compute_queue0_command_pool0_command_buffer0,
+            .waitSemaphoreCount = (tick % ticks_per_frame == 0) ? 1u : 0u,
+            .pWaitSemaphores = (tick % ticks_per_frame == 0) ? &vk_swapchain_image_acquisition_semaphore : nullptr,
+            .pWaitDstStageMask = (tick % ticks_per_frame == 0) ? &vk_compute_queue0_submit_wait_stage_mask : nullptr,
+            .signalSemaphoreCount = (tick % ticks_per_frame == 0) ? 1u : 0u,
+            .pSignalSemaphores = (tick % ticks_per_frame == 0) ? &vk_swapchain_image_finished_semaphores[vk_swapchain_backbuffer_index] : nullptr,
+        };
+
+        if (vkQueueSubmit(queues.compute0_0.vk_queue, 1, &vk_compute_queue0_submit_info, vk_compute_pass0_0_finished_fence) != VK_SUCCESS) {
+            std::cerr << "Failed to submit compute pass 0.0 work to compute queue 0.0" << std::endl;
+            return 1;
+        }
+
+        if (tick % ticks_per_frame == 0) {
+            VkPresentInfoKHR vk_compute_queue0_present_info = {
+                .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+                .waitSemaphoreCount = 1,
+                .pWaitSemaphores = &vk_swapchain_image_finished_semaphores[vk_swapchain_backbuffer_index],
+                .swapchainCount = 1,
+                .pSwapchains = &vk_swapchain,
+                .pImageIndices = &vk_swapchain_backbuffer_index,
+                .pResults = nullptr,
+            };
+
+            if (vkQueuePresentKHR(queues.compute0_0.vk_queue, &vk_compute_queue0_present_info) != VK_SUCCESS) {
+                std::cerr << "Failed to present compute queue 0" << std::endl;
+                return 1;
+            }
+        }
+
+        tick++;
+        if ((p_uniforms->v & 0x20) == 0) {
+            game_tick++;
+        }
     }
+
+    assert(vkDeviceWaitIdle(vk_device) == VK_SUCCESS);
+
+    /* cleaup synchronization primitives */
+    vkDestroyFence(vk_device, vk_compute_pass0_0_finished_fence, nullptr);
+
+    /* cleanup descriptor sets and pool */
+    vkDestroyDescriptorPool(vk_device, vk_compute_pass0_0_descriptor_pool0, nullptr);
 
     /* cleanup compute pass 0.0 pipeline and shaders */
     vkDestroyPipeline(vk_device, vk_compute_pass0_0_pipeline, nullptr);
@@ -563,22 +1145,26 @@ int main() {
 
     /* cleanup compute pass 0.0 layouts */
     vkDestroyPipelineLayout(vk_device, vk_compute_pass0_0_pipeline_layout, nullptr);
-    vkDestroyDescriptorSetLayout(vk_device, vk_compute_pass0_0_descriptor_set_layout, nullptr);
+    vkDestroyDescriptorSetLayout(vk_device, vk_compute_pass0_0_descriptor_set_layout0, nullptr);
 
     /* cleanup uniform resources and free heap */
     vkDestroyBuffer(vk_device, vk_uniform_buffer, nullptr);
+    vkUnmapMemory(vk_device, uniform_heap.vk_heap_memory);
     kvk::resource::mono_free_heap(vk_device, uniform_heap);
 
     /* cleanup cellular automata resources and free heap */
+    vkDestroyImageView(vk_device, vk_cellular_automata_render_image_view, nullptr);
     vkDestroyImage(vk_device, vk_cellular_automata_render_image, nullptr);
     vkDestroyBuffer(vk_device, vk_cellular_automata_buffer1, nullptr);
     vkDestroyBuffer(vk_device, vk_cellular_automata_buffer0, nullptr);
     kvk::resource::mono_free_heap(vk_device, cellular_automata_heap);
 
     /* cleanup swapchain */
-    for (uint32_t i = 0; i < vk_swapchain_backbuffer_views.size(); ++i) {
-        vkDestroyImageView(vk_device, vk_swapchain_backbuffer_views[i], nullptr);
+    for (uint32_t i = 0; i < vk_swapchain_backbuffers.size(); ++i) {
+        vkDestroySemaphore(vk_device, vk_swapchain_image_finished_semaphores[i], nullptr);
+        //vkDestroyImageView(vk_device, vk_swapchain_backbuffer_views[i], nullptr);
     }
+    vkDestroySemaphore(vk_device, vk_swapchain_image_acquisition_semaphore, nullptr);
     vkDestroySwapchainKHR(vk_device, vk_swapchain, nullptr);
 
     /* cleanup command pool and buffers */

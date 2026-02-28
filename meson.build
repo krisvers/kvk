@@ -16,18 +16,35 @@ library = static_library('kvk',
     override_options: ['cpp_std=c++20'],
 )
 
-dxc_executable = find_program('dxc', required: true)
+dxc_exe = find_program('dxc', required: true)
+
+# HLSL compilation
+# demo_shader_bin = custom_target('compile demo shader',
+#     output: 'cellular_automata.bin',
+#     input: 'demo/cellular_automata.hlsl',
+#     command: [
+#         dxc_exe,
+#         '-E', 'cellular_automata',
+#         '-T', 'cs_6_0',
+#         '@INPUT@',
+#         '-Fo', '@OUTPUT@',
+#         '-spirv', '-Zi',
+#     ]
+# )
+
+glslang_validator_exe = find_program('glslangValidator', required: true)
 
 demo_shader_bin = custom_target('compile demo shader',
-    output: 'cellular_automata.hlsl.bin',
-    input: 'demo/cellular_automata.hlsl',
+    output: 'cellular_automata.bin',
+    input: 'demo/cellular_automata.glsl',
     command: [
-        dxc_executable,
-        '-E', 'cellular_automata',
-        '-T', 'cs_6_0',
+        glslang_validator_exe,
+        '-e', 'cellular_automata',
+        '--source-entrypoint', 'cellular_automata',
+        '-S', 'comp',
+        '--target-env', 'vulkan1.2',
         '@INPUT@',
-        '-Fo', '@OUTPUT@',
-        '-spirv', '-Zi',
+        '-o', '@OUTPUT@',
     ]
 )
 
