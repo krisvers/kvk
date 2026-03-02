@@ -1,5 +1,14 @@
 #version 460
 #extension GL_ARB_separate_shader_objects : enable
+#extension GL_EXT_nonuniform_qualifier : require
+
+#define VISUAL_MODE_FLOW_CHANGE_INTENSITY 1
+#define VISUAL_MODE_COUNT_GREATER 2
+#define VISUAL_MODE_COUNT_LESS 3
+#define VISUAL_MODE_COUNT_WALL 4
+#define VISUAL_MODE_FLOW_STRENGTH_INTENSITY 8
+#define VISUAL_MODE_FLOW_DIRECTION 9
+#define VISUAL_MODE_WATER_INTENSITY 0
 
 struct Cell {
     uint ground_height; // : 8
@@ -25,12 +34,13 @@ layout(std140, set = 0, binding = 2) uniform Uniforms {
     uint bytes_per_cell;
     uint width;
     uint height;
+    uint visual_mode;
 } uniforms;
 
 layout(set = 0, binding = 3, rgba8) uniform image2D output_image;
 
 uint _load(uint id) {
-    return input_grid.elements[id];
+    return input_grid.elements[nonuniformEXT(id)];
 }
 
 uint load(ivec2 pos) {
@@ -42,7 +52,7 @@ uint load(ivec2 pos) {
 }
 
 void store(uint id, uint value) {
-    output_grid.elements[id] = value;
+    output_grid.elements[nonuniformEXT(id)] = value;
 }
 
 Cell decompress(uint value) {
@@ -71,7 +81,7 @@ uint compress(Cell cell) {
     uint d, x, y;
     if (abs(cell.flow_dir.x) == abs(cell.flow_dir.y)) {
         d = 0;
-        if (cell.flow_strength == 0) {
+        if (cell.ground_height == 0) {
             x = 0;
             y = 0;
         } else {
@@ -93,6 +103,7 @@ uint compress(Cell cell) {
 Cell load_cell(uint id) {
     if (id >= uniforms.width * uniforms.height) {
         Cell cell;
+        cell.ground_height = 2;
         cell.wall = true;
         return cell;
     }
@@ -103,6 +114,7 @@ Cell load_cell(uint id) {
 Cell load_cell(ivec2 pos) {
     if (pos.x < 0 || pos.x >= uniforms.width || pos.y < 0 || pos.y >= uniforms.height) {
         Cell cell;
+        cell.ground_height = 2;
         cell.wall = true;
         return cell;
     }
@@ -118,6 +130,10 @@ float random(vec2 st) {
     return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
 }
 
+vec3 intensity_color(float t) {
+    return vec3(mix(mix(vec3(1.0, 0.0, 0.0), vec3(0.5, 1.0, 0.5), min(t*2.0, 1.0)), mix(vec3(0.5, 1.0, 0.5), vec3(0.0, 0.0, 1.0), max(t*2.0-1.0, 0.0)), step(0.5, t)));
+}
+
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 void cellular_automata() {
     uint id = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * (gl_NumWorkGroups.x * gl_WorkGroupSize.x) + gl_GlobalInvocationID.z * (gl_NumWorkGroups.x * gl_WorkGroupSize.x) * (gl_NumWorkGroups.y * gl_WorkGroupSize.y);
@@ -130,12 +146,21 @@ void cellular_automata() {
         float r1 = random(vec2(gl_GlobalInvocationID.xy * uniforms.tick));
         float r2 = random(vec2(gl_LocalInvocationID.xy * uniforms.tick * r1));
 
-        cell.ground_height = 0x0;
-        cell.water_level += 0x2;
+        cell.water_level = 255 - cell.water_level;
+        cell.flow_dir.x = -1;
+        cell.flow_dir.y = 1;
+        cell.ground_height = uniforms.v >> 24;
+    }
+    
+    if ((uniforms.v & 0x80) != 0) {
+        cell.water_level = 0x0;
         cell.flow_dir.x = 1;
         cell.flow_dir.y = -1;
-        cell.flow_strength = 32;
-    } else if ((uniforms.v & 0x20) == 0) {
+        cell.ground_height = 0;
+    }
+    
+    vec3 color = vec3(-1.0);
+    if ((uniforms.v & 0x20) == 0) {
         Cell a0, a1, a2;
         Cell b0,     b2;
         Cell c0, c1, c2;
@@ -151,43 +176,6 @@ void cellular_automata() {
         c1 = load_cell(pos + ivec2( 0,  1));
         c2 = load_cell(pos + ivec2( 1,  1));
 
-        /*
-        vec2 summed_flows = vec2(
-            a0.flow_dir +
-            a1.flow_dir +
-            a2.flow_dir +
-            b0.flow_dir +
-            b2.flow_dir +
-            c0.flow_dir +
-            c1.flow_dir +
-            c2.flow_dir
-        );
-
-        cell.flow_dir = ivec2(sign(summed_flows));// * step(0.0, abs(summed_flows))));
-        cell.flow_strength = uint(length(summed_flows));
-
-        cell.water_level = max(0, cell.water_level + int(
-            dot(normalize(vec2(a0.flow_dir)), normalize(vec2( 1,  1))) * min(a0.flow_strength, a0.water_level) +
-            dot(normalize(vec2(a1.flow_dir)), normalize(vec2( 0,  1))) * min(a1.flow_strength, a1.water_level) +
-            dot(normalize(vec2(a2.flow_dir)), normalize(vec2(-1,  1))) * min(a2.flow_strength, a2.water_level) +
-            dot(normalize(vec2(b0.flow_dir)), normalize(vec2( 1,  0))) * min(b0.flow_strength, b0.water_level) +
-            dot(normalize(vec2(b2.flow_dir)), normalize(vec2(-1,  0))) * min(b2.flow_strength, b2.water_level) +
-            dot(normalize(vec2(c0.flow_dir)), normalize(vec2( 1, -1))) * min(c0.flow_strength, c0.water_level) +
-            dot(normalize(vec2(c1.flow_dir)), normalize(vec2( 0, -1))) * min(c1.flow_strength, c1.water_level) +
-            dot(normalize(vec2(c2.flow_dir)), normalize(vec2(-1, -1))) * min(c2.flow_strength, c2.water_level)
-        ));
-        */
-
-        vec2 flow =
-            a0.water_level * normalize(vec2( 1,  1)) +
-            a1.water_level *           vec2( 0,  1)  +
-            a2.water_level * normalize(vec2(-1,  1)) +
-            b0.water_level *           vec2( 1,  0)  +
-            b2.water_level *           vec2(-1,  0)  +
-            c0.water_level * normalize(vec2( 1, -1)) +
-            c1.water_level *           vec2( 0, -1)  +
-            c2.water_level * normalize(vec2(-1, -1));
-
         float diff =
             int(!a0.wall) * (cell.water_level - a0.water_level) +
             int(!a1.wall) * (cell.water_level - a1.water_level) +
@@ -198,17 +186,106 @@ void cellular_automata() {
             int(!c1.wall) * (cell.water_level - c1.water_level) +
             int(!c2.wall) * (cell.water_level - c2.water_level);
 
-        float change = length(flow) / 8.0;
+        uint count_wall = 
+            uint(a0.wall) +
+            uint(a1.wall) +
+            uint(a2.wall) +
+            uint(b0.wall) +
+            uint(b2.wall) +
+            uint(c0.wall) +
+            uint(c1.wall) +
+            uint(c2.wall);
+
+        uint count_greater =
+            uint(a0.water_level > cell.water_level) +
+            uint(a1.water_level > cell.water_level) +
+            uint(a2.water_level > cell.water_level) +
+            uint(b0.water_level > cell.water_level) +
+            uint(b2.water_level > cell.water_level) +
+            uint(c0.water_level > cell.water_level) +
+            uint(c1.water_level > cell.water_level) +
+            uint(c2.water_level > cell.water_level) - count_wall;
+
+        uint count_less =
+            uint(a0.water_level < cell.water_level) +
+            uint(a1.water_level < cell.water_level) +
+            uint(a2.water_level < cell.water_level) +
+            uint(b0.water_level < cell.water_level) +
+            uint(b2.water_level < cell.water_level) +
+            uint(c0.water_level < cell.water_level) +
+            uint(c1.water_level < cell.water_level) +
+            uint(c2.water_level < cell.water_level) - count_wall;
+
+        uint surrounding_sum = 
+            a0.water_level +
+            a1.water_level +
+            a2.water_level +
+            b0.water_level +
+            b2.water_level +
+            c0.water_level +
+            c1.water_level +
+            c2.water_level;
+
+        float average_water_level = surrounding_sum / 8.0;
+
+        uint surrounding_ground_height =
+            a0.ground_height +
+            a1.ground_height +
+            a2.ground_height +
+            b0.ground_height +
+            b2.ground_height +
+            c0.ground_height +
+            c1.ground_height +
+            c2.ground_height;
+
+        float average_ground_height = surrounding_ground_height / (8.0 - count_wall);
+
+        vec2 flow =
+            (a0.wall ? average_water_level : a0.water_level) * normalize(vec2( 1,  1)) +
+            (a1.wall ? average_water_level : a1.water_level) *           vec2( 0,  1)  +
+            (a2.wall ? average_water_level : a2.water_level) * normalize(vec2(-1,  1)) +
+            (b0.wall ? average_water_level : b0.water_level) *           vec2( 1,  0)  +
+            (b2.wall ? average_water_level : b2.water_level) *           vec2(-1,  0)  +
+            (c0.wall ? average_water_level : c0.water_level) * normalize(vec2( 1, -1)) +
+            (c1.wall ? average_water_level : c1.water_level) *           vec2( 0, -1)  +
+            (c2.wall ? average_water_level : c2.water_level) * normalize(vec2(-1, -1));
+
+        float change = length(flow) / float(8 - count_wall);
         cell.flow_dir = ivec2(sign(flow));
-        cell.water_level = max(0, min(255, cell.water_level - int(diff * change)));
+        cell.water_level = uint(pow(max(0, min(255, cell.water_level + max(int(change) + count_greater, -count_less))), 0.99 * cell.ground_height / 32.0));
+        cell.ground_height = uint((pow((cell.ground_height - 4) / 16.0, 1.1) * 16.0 + pow(2 * (average_ground_height - 4.1), 0.52)) / 1.9);
         //cell.water_level = uint(max(0, min(255, int(cell.water_level))));
         //store_cell(id, cell);
-        //
-        imageStore(output_image, coord, vec4(change, 0.0, cell.water_level / 255.0, 1.0));
-    } else {
+
+        if (uniforms.visual_mode == VISUAL_MODE_FLOW_CHANGE_INTENSITY) {
+            float t = change;
+            color = intensity_color(t);
+        } else if (uniforms.visual_mode == VISUAL_MODE_COUNT_GREATER) {
+            color = intensity_color(count_greater / 8.0);
+        } else if (uniforms.visual_mode == VISUAL_MODE_COUNT_LESS) {
+            color = intensity_color(count_less / 8.0);
+        } else if (uniforms.visual_mode == VISUAL_MODE_COUNT_WALL) {
+            color = intensity_color(count_wall / 8.0);
+        }
     }
 
-    float t = 1 - cell.water_level / 255.0;
     store_cell(id, cell);
-    //imageStore(output_image, coord, vec4(mix(mix(vec3(1.0, 0.0, 0.0), vec3(0.5, 1.0, 0.5), min(t*2.0, 1.0)), mix(vec3(0.5, 1.0, 0.5), vec3(0.0, 0.0, 1.0), max(t*2.0-1.0, 0.0)), step(0.5, t)), 1.0));
+    
+    if (uniforms.visual_mode == VISUAL_MODE_WATER_INTENSITY) {
+        float t = 1 - cell.water_level / 255.0;
+        color = intensity_color(t);
+    } else if (uniforms.visual_mode == VISUAL_MODE_FLOW_DIRECTION) {
+        color = vec3((vec2(cell.flow_dir) + 1.0) / 2.0, 0.0);
+    } else if (uniforms.visual_mode == VISUAL_MODE_FLOW_STRENGTH_INTENSITY) {
+        float t = 1 - cell.ground_height / 196.0;
+        color = intensity_color(t);
+    }
+
+    if (gl_GlobalInvocationID.x < uniforms.x + uniforms.width / 256 && gl_GlobalInvocationID.x >= uniforms.x - uniforms.width / 256 && gl_GlobalInvocationID.y < uniforms.y + uniforms.height / 256 && gl_GlobalInvocationID.y >= uniforms.y - uniforms.height / 256) {
+        color = vec3(1.0, 1.0, 1.0) - color;
+    }
+
+    if (color != vec3(-1.0)) {
+        imageStore(output_image, coord, vec4(color, 1.0));
+    }
 }

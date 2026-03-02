@@ -1,19 +1,20 @@
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include <iterator>
+#include <vector>
 #include <string>
 #include <filesystem>
 
-#define KVK_USE_DXC
 #include "kvk.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
-#define CELLULAR_AUTOMATA_GRID_WIDTH 32
-#define CELLULAR_AUTOMATA_GRID_HEIGHT 32
-#define WINDOW_WIDTH 896
-#define WINDOW_HEIGHT 896
+#define CELLULAR_AUTOMATA_GRID_WIDTH 4096
+#define CELLULAR_AUTOMATA_GRID_HEIGHT 2048
+#define WINDOW_WIDTH 1664
+#define WINDOW_HEIGHT 832
 #define CELLULAR_AUTOMATA_BYTES_PER_CELL 4
 
 struct Queue {
@@ -35,6 +36,7 @@ struct Uniforms {
     uint32_t bytes_per_cell;
     uint32_t width;
     uint32_t height;
+    uint32_t visual_mode;
 };
 
 int main() {
@@ -140,16 +142,22 @@ int main() {
     }
 
     /* setup device */
+    VkPhysicalDeviceVulkan12Features vk_physical_device_vulkan12_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+        .shaderStorageBufferArrayNonUniformIndexing = true,
+        .shaderStorageImageArrayNonUniformIndexing = true,
+    };
+
     VkDevice vk_device;
     VkPhysicalDevice vk_physical_device;
     std::vector<kvk::DeviceQueueReturn> vk_device_queues;
     if (kvk::create_device(vk_instance, {
+        .vk_pnext = &vk_physical_device_vulkan12_features,
         .vk_extensions = {},
         .physical_device_query = {
             .minimum_vk_version = VK_MAKE_API_VERSION(0, 1, 2, 197),
             .excluded_device_types = kvk::PhysicalDeviceTypeFlags::CPU | kvk::PhysicalDeviceTypeFlags::VIRTUAL_GPU | kvk::PhysicalDeviceTypeFlags::OTHER,
             .minimum_features = {
-                .shaderSampledImageArrayDynamicIndexing = true,
                 .shaderStorageBufferArrayDynamicIndexing = true,
                 .shaderStorageImageArrayDynamicIndexing = true,
             },
@@ -518,7 +526,7 @@ int main() {
     kvk::resource::MonoAllocationResident const& uniform_buffer_resident = uniform_heap.residents[{ .vk_buffer = vk_uniform_buffer }];
 
     Uniforms* p_uniforms;
-    if (vkMapMemory(vk_device, uniform_heap.vk_heap_memory, uniform_buffer_resident.vk_heap_offset, uniform_buffer_resident.vk_size, 0, reinterpret_cast<void**>(&p_uniforms)) != VK_SUCCESS) {
+    if (vkMapMemory(vk_device, uniform_heap.vk_heap_memory, uniform_buffer_resident.vk_heap_offset, sizeof(Uniforms), 0, reinterpret_cast<void**>(&p_uniforms)) != VK_SUCCESS) {
         std::cerr << "Failed to map uniform heap memory for uniform buffer" << std::endl;
         return 1;
     }
@@ -576,22 +584,22 @@ int main() {
     }
 
     /* load and compile shader */
-    std::vector<uint32_t> compute0_0_shader_spv(std::filesystem::file_size("cellular_automata.bin") / sizeof(uint32_t));
+    std::vector<uint8_t> compute0_0_shader_spv(std::filesystem::file_size("cellular_automata.bin"));
     {
-        std::ifstream in("cellular_automata.bin");
+        std::ifstream in("cellular_automata.bin", std::ios::binary);
         if (!in.good()) {
             std::cerr << "Failed to open cellular_automata.bin" << std::endl;
             return 1;
         }
 
-        in.read(reinterpret_cast<char*>(&compute0_0_shader_spv[0]), compute0_0_shader_spv.size() * sizeof(uint32_t));
+        in.read(reinterpret_cast<char*>(&compute0_0_shader_spv[0]), compute0_0_shader_spv.size());
         in.close();
     }
 
     VkShaderModuleCreateInfo vk_compute_pass0_0_shader_module_create_info = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = compute0_0_shader_spv.size() * sizeof(uint32_t),
-        .pCode = compute0_0_shader_spv.data(),
+        .codeSize = compute0_0_shader_spv.size(),
+        .pCode = reinterpret_cast<uint32_t const*>(compute0_0_shader_spv.data()),
     };
 
     VkShaderModule vk_compute_pass0_0_shader_module;
@@ -681,18 +689,45 @@ int main() {
     float mouse_y = 0;
     float zoom = 1.0f;
 
-    uint32_t ticks_per_frame = 1;
+    float frames_per_tick = 13.0f;
     uint32_t tick = 0;
+    uint32_t frame = 0;
     uint32_t game_tick = 0;
-    uint32_t type = 1;
     bool running = true;
     bool left_click = false;
     bool right_click = false;
     bool paused = false;
+
     SDL_Event sdl_event;
+    p_uniforms->visual_mode = 8;
+    p_uniforms->v = 0x80;
     while (running) {
+        bool compute = false;
+        bool render = false;
+        frames_per_tick = std::max(std::floor(frames_per_tick * 5.0f) / 5.0f, 0.2f);
+
+        if (frames_per_tick >= 1.0f) {
+            ++frame;
+            render = true;
+            if (frame % static_cast<uint32_t>(frames_per_tick) == 0) {
+                compute = true;
+                ++tick;
+            }
+        } else {
+            ++tick;
+            compute = true;
+            if (tick % std::max(static_cast<uint32_t>(1.0f / frames_per_tick), 0u) == 0) {
+                render = true;
+                ++frame;
+            }
+        }
+
+        if (frame == 1 || tick == 1) {
+            p_uniforms->v = 0;
+        }
+
         SDL_Delay(1);
-        p_uniforms->v = (p_uniforms->v & ~0x3f) | (paused ? 0x20 : 0x00) | (right_click ? 0x58 | (type & 0x7) : 0x00);
+        p_uniforms->v = (p_uniforms->v & ~0x3f) | ((paused || !compute) ? 0x20 : 0x00) | (left_click ? 0x58 : 0x00) | 0xff000000;
 
         while (SDL_PollEvent(&sdl_event)) {
             switch (sdl_event.type) {
@@ -710,7 +745,7 @@ int main() {
                     if (sdl_event.button.button == SDL_BUTTON_LEFT) {
                         left_click = sdl_event.button.down;
                         if (left_click) {
-                            p_uniforms->v = (p_uniforms->v & ~0x1f) | 0x18 | (type & 0x7);
+                            p_uniforms->v = (p_uniforms->v & ~0x1f) | 0x18;
                         } else {
                             p_uniforms->v &= ~0x1f;
                         }
@@ -720,33 +755,44 @@ int main() {
                     break;
                 case SDL_EVENT_KEY_DOWN:
                     switch (sdl_event.key.key) {
+                        case SDLK_R:
+                            p_uniforms->v = (p_uniforms->v & ~0x80) | 0x80;
+                            break;
                         case SDLK_SPACE:
                             if (!sdl_event.key.repeat) {
                                 paused = !paused;
                             }
                             break;
+                        case SDLK_0:
                         case SDLK_1:
                         case SDLK_2:
                         case SDLK_3:
                         case SDLK_4:
                         case SDLK_5:
                         case SDLK_6:
+                        case SDLK_7:
+                        case SDLK_8:
+                        case SDLK_9:
                             if (!sdl_event.key.repeat) {
-                                type = sdl_event.key.key - SDLK_0;
+                                p_uniforms->visual_mode = sdl_event.key.key - SDLK_0;
                             }
                             break;
                         case SDLK_RIGHT:
                             p_uniforms->v &= ~0x20;
                             break;
                         case SDLK_UP:
-                            if (!sdl_event.key.repeat) {
-                                ticks_per_frame++;
+                            if (frames_per_tick < 1.0f) {
+                                frames_per_tick -= 0.2f;
+                            } else {
+                                frames_per_tick -= 1.0f;
                             }
                             break;
                         case SDLK_DOWN:
                             if (!sdl_event.key.repeat) {
-                                if (ticks_per_frame != 1) {
-                                    ticks_per_frame--;
+                                if (frames_per_tick < 1.0f) {
+                                    frames_per_tick += 0.2f;
+                                } else {
+                                    frames_per_tick += 1.0f;
                                 }
                             }
                             break;
@@ -755,6 +801,17 @@ int main() {
                             break;
                         case SDLK_MINUS:
                             zoom /= 1.15f;
+                            break;
+                        default:
+                            break;
+                    }
+                    break;
+                case SDL_EVENT_KEY_UP:
+                    switch (sdl_event.key.key) {
+                        case SDLK_R:
+                            p_uniforms->v &= ~0x80;
+                            break;
+                        default:
                             break;
                     }
                     break;
@@ -765,6 +822,7 @@ int main() {
                 case SDL_EVENT_MOUSE_WHEEL:
                     view_x += sdl_event.wheel.x;
                     view_y -= sdl_event.wheel.y;
+                    p_uniforms->v = (p_uniforms->v & 0xffffff) | (std::max(0u, std::min(255u, (((p_uniforms->v >> 24) + ((sdl_event.wheel.integer_y > 0) ? 1 : -1))))) << 24);
                     break;
             }
 
@@ -773,6 +831,7 @@ int main() {
             }
         }
 
+        std::cout << std::hex << p_uniforms->v << std::endl;
         p_uniforms->x = mouse_x * static_cast<float>(CELLULAR_AUTOMATA_GRID_WIDTH) / WINDOW_WIDTH;
         p_uniforms->y = mouse_y * static_cast<float>(CELLULAR_AUTOMATA_GRID_HEIGHT) / WINDOW_HEIGHT;
         p_uniforms->tick = game_tick;
@@ -791,8 +850,8 @@ int main() {
         }
 
         /* acquire swapchain image */
-        uint32_t vk_swapchain_backbuffer_index;
-        if (tick % ticks_per_frame == 0) {
+        uint32_t vk_swapchain_backbuffer_index = 0;
+        if (render) {
             if (vkAcquireNextImageKHR(vk_device, vk_swapchain, std::numeric_limits<uint64_t>::max(), vk_swapchain_image_acquisition_semaphore, nullptr, &vk_swapchain_backbuffer_index) != VK_SUCCESS) {
                 std::cerr << "Failed to acquire swapchain image index" << std::endl;
                 return 1;
@@ -825,7 +884,7 @@ int main() {
         VkDescriptorBufferInfo vk_compute_pass0_0_descriptor_pool0_set0_binding2_buffer_info = {
             .buffer = vk_uniform_buffer,
             .offset = 0,
-            .range = uniform_buffer_resident.vk_size,
+            .range = sizeof(Uniforms),
         };
 
         VkDescriptorImageInfo vk_compute_pass0_0_descriptor_pool0_set0_binding3_image_info = {
@@ -919,7 +978,7 @@ int main() {
                 .dstQueueFamilyIndex = queues.compute0_0.family_index,
                 .buffer = vk_uniform_buffer,
                 .offset = 0,
-                .size = uniform_buffer_resident.vk_size,
+                .size = sizeof(Uniforms),
             },
         };
 
@@ -997,11 +1056,11 @@ int main() {
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
             0, nullptr,
             0, nullptr,
-            (tick % ticks_per_frame == 0) ? 2 : 1,
+            render ? 2 : 1,
             &vk_compute_pass0_0_prepare_for_blit_image_memory_barriers[0]
         );
         
-        if (tick % ticks_per_frame == 0) {
+        if (render) {
             VkClearColorValue vk_swapchain_backbuffer_clear_color = {
                 .float32 = { 0.0f, 0.0f, 0.0f, 1.0f }
             };
@@ -1055,7 +1114,7 @@ int main() {
                 },
             };
 
-            vkCmdBlitImage(vk_compute_queue0_command_pool0_command_buffer0, vk_cellular_automata_render_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, vk_swapchain_backbuffers[vk_swapchain_backbuffer_index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &vk_compute_pass0_0_blit_render_image_to_swapchain, VK_FILTER_NEAREST);
+            vkCmdBlitImage(vk_compute_queue0_command_pool0_command_buffer0, vk_cellular_automata_render_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, vk_swapchain_backbuffers[vk_swapchain_backbuffer_index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &vk_compute_pass0_0_blit_render_image_to_swapchain, (CELLULAR_AUTOMATA_GRID_WIDTH >= WINDOW_WIDTH / 2) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
 
             VkImageMemoryBarrier vk_swapchain_backbuffer_prepare_for_present_image_memory_barrier =
             {
@@ -1094,13 +1153,13 @@ int main() {
 
         VkSubmitInfo vk_compute_queue0_submit_info = {
             .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .waitSemaphoreCount = (render) ? 1u : 0u,
+            .pWaitSemaphores = (render) ? &vk_swapchain_image_acquisition_semaphore : nullptr,
+            .pWaitDstStageMask = (render) ? &vk_compute_queue0_submit_wait_stage_mask : nullptr,
             .commandBufferCount = 1,
             .pCommandBuffers = &vk_compute_queue0_command_pool0_command_buffer0,
-            .waitSemaphoreCount = (tick % ticks_per_frame == 0) ? 1u : 0u,
-            .pWaitSemaphores = (tick % ticks_per_frame == 0) ? &vk_swapchain_image_acquisition_semaphore : nullptr,
-            .pWaitDstStageMask = (tick % ticks_per_frame == 0) ? &vk_compute_queue0_submit_wait_stage_mask : nullptr,
-            .signalSemaphoreCount = (tick % ticks_per_frame == 0) ? 1u : 0u,
-            .pSignalSemaphores = (tick % ticks_per_frame == 0) ? &vk_swapchain_image_finished_semaphores[vk_swapchain_backbuffer_index] : nullptr,
+            .signalSemaphoreCount = (render) ? 1u : 0u,
+            .pSignalSemaphores = (render) ? &vk_swapchain_image_finished_semaphores[vk_swapchain_backbuffer_index] : nullptr,
         };
 
         if (vkQueueSubmit(queues.compute0_0.vk_queue, 1, &vk_compute_queue0_submit_info, vk_compute_pass0_0_finished_fence) != VK_SUCCESS) {
@@ -1108,7 +1167,7 @@ int main() {
             return 1;
         }
 
-        if (tick % ticks_per_frame == 0) {
+        if (render) {
             VkPresentInfoKHR vk_compute_queue0_present_info = {
                 .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
                 .waitSemaphoreCount = 1,
@@ -1131,7 +1190,7 @@ int main() {
         }
     }
 
-    assert(vkDeviceWaitIdle(vk_device) == VK_SUCCESS);
+    vkDeviceWaitIdle(vk_device);
 
     /* cleaup synchronization primitives */
     vkDestroyFence(vk_device, vk_compute_pass0_0_finished_fence, nullptr);

@@ -8,7 +8,7 @@
 #include <unordered_map>
 
 #ifdef KVK_USE_DXC
-#include <dxc/dxcapi.h>
+//#include <dxc/dxcapi.h>
 #endif
 
 namespace kvk {

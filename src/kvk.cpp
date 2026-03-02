@@ -41,6 +41,20 @@ VkResult create_instance(InstanceCreateInfo const& create_info, VkInstance& vk_i
         .pUserData = create_info.presets.debug_report_callback_user_data,
     };
 
+    uint32_t vk_available_instance_layer_properties_count;
+    vk_result = vkEnumerateInstanceLayerProperties(&vk_available_instance_layer_properties_count, nullptr);
+    if (vk_result != VK_SUCCESS) {
+        KVK_ERR(vk_result, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Failed to enumerate instance layer properties");
+        return vk_result;
+    }
+
+    std::vector<VkLayerProperties> vk_available_instance_layer_properties(vk_available_instance_layer_properties_count);
+    vk_result = vkEnumerateInstanceLayerProperties(&vk_available_instance_layer_properties_count, vk_available_instance_layer_properties.data());
+    if (vk_result != VK_SUCCESS) {
+        KVK_ERR(vk_result, VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, "Failed to enumerate instance layer properties");
+        return vk_result;
+    }
+
     void* vk_pnext = create_info.vk_pnext;
     VkFlags vk_flags = create_info.vk_flags;
 
@@ -49,7 +63,11 @@ VkResult create_instance(InstanceCreateInfo const& create_info, VkInstance& vk_i
 
     /* specific optional presets */
     if (create_info.presets.enable_validation_layers) {
-        enabled_layers.push_back("VK_LAYER_KHRONOS_validation");
+        if (std::find_if(vk_available_instance_layer_properties.begin(), vk_available_instance_layer_properties.end(), [](VkLayerProperties const& layer_properties) { return std::strcmp(layer_properties.layerName, "VK_LAYER_KHRONOS_validation") == 0; }) == vk_available_instance_layer_properties.end()) {
+            KVK_ERR(VK_ERROR_LAYER_NOT_PRESENT, VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT, "Validation layers requested but VK_LAYER_KHRONOS_validation not available");
+        } else {
+            enabled_layers.push_back("VK_LAYER_KHRONOS_validation");
+        }
     }
 
     if (create_info.presets.enable_debug_utils) {

@@ -16,7 +16,7 @@ library = static_library('kvk',
     override_options: ['cpp_std=c++20'],
 )
 
-dxc_exe = find_program('dxc', required: true)
+# dxc_exe = find_program('dxc', required: true)
 
 # HLSL compilation
 # demo_shader_bin = custom_target('compile demo shader',
