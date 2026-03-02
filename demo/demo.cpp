@@ -17,6 +17,8 @@
 #define WINDOW_HEIGHT 832
 #define CELLULAR_AUTOMATA_BYTES_PER_CELL 4
 
+#define EMBED_SHADER
+
 struct Queue {
     VkQueue vk_queue;
     uint32_t family_index;
@@ -39,7 +41,48 @@ struct Uniforms {
     uint32_t visual_mode;
 };
 
-int main() {
+int main(int argc, char** argv) {
+    uint32_t width = CELLULAR_AUTOMATA_GRID_WIDTH;
+    uint32_t height = CELLULAR_AUTOMATA_GRID_HEIGHT;
+    uint32_t window_width = WINDOW_WIDTH;
+    uint32_t window_height = WINDOW_HEIGHT;
+
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--grid") == 0) {
+            if (i == argc - 1) {
+                std::cout << "Provide one more argument: \"[grid width]x[grid height]\"" << std::endl;
+                return 1;
+            }
+
+            const char* x = std::strchr(argv[i + 1], 'x');
+            if (x == nullptr) {
+                std::cout << "Invalid argument: \"" << argv[i + 1] << "\"; should be: \"[grid width]x[grid height]\"" << std::endl;
+                return 1;
+            }
+
+            int w = std::stoi(std::string(argv[i + 1], x - argv[i + 1]));
+            int h = std::atoi(x + 1);
+            width = static_cast<uint32_t>(w);
+            height = static_cast<uint32_t>(h);
+        } else if (std::strcmp(argv[i], "--window") == 0) {
+            if (i == argc - 1) {
+                std::cout << "Provide one more argument: \"[window width]x[window height]\"" << std::endl;
+                return 1;
+            }
+
+            const char* x = std::strchr(argv[i + 1], 'x');
+            if (x == nullptr) {
+                std::cout << "Invalid argument: \"" << argv[i + 1] << "\"; should be: \"[window width]x[window height]\"" << std::endl;
+                return 1;
+            }
+
+            int w = std::stoi(std::string(argv[i + 1], x - argv[i + 1]));
+            int h = std::atoi(x + 1);
+            window_width = static_cast<uint32_t>(w);
+            window_height = static_cast<uint32_t>(h);
+        }
+    }
+
     /* setup SDL3 and window */
     SDL_SetHint(SDL_HINT_MAC_SCROLL_MOMENTUM, "1");
 
@@ -53,7 +96,7 @@ int main() {
         return 1;
     }
 
-    SDL_Window* sdl_window = SDL_CreateWindow("fuzzy snakes | cellular automata", WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_VULKAN);
+    SDL_Window* sdl_window = SDL_CreateWindow("fuzzy snakes | cellular automata", window_width, window_height, SDL_WINDOW_VULKAN);
     if (sdl_window == nullptr) {
         std::cerr << "SDL_CreateWindow Error: " << SDL_GetError() << std::endl;
         return 1;
@@ -394,7 +437,7 @@ int main() {
     /* setup cellular automata resources and allocate heaps */
     VkBufferCreateInfo vk_cellular_automata_buffer_create_info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = CELLULAR_AUTOMATA_GRID_WIDTH * CELLULAR_AUTOMATA_GRID_HEIGHT * CELLULAR_AUTOMATA_BYTES_PER_CELL,
+        .size = width * height * CELLULAR_AUTOMATA_BYTES_PER_CELL,
         .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
     };
 
@@ -414,8 +457,8 @@ int main() {
         .imageType = VK_IMAGE_TYPE_2D,
         .format = VK_FORMAT_R8G8B8A8_UNORM,
         .extent = {
-            .width = CELLULAR_AUTOMATA_GRID_WIDTH,
-            .height = CELLULAR_AUTOMATA_GRID_HEIGHT,
+            .width = width,
+            .height = height,
             .depth = 1,
         },
         .mipLevels = 1,
@@ -584,6 +627,7 @@ int main() {
     }
 
     /* load and compile shader */
+#ifndef EMBED_SHADER
     std::vector<uint8_t> compute0_0_shader_spv(std::filesystem::file_size("cellular_automata.bin"));
     {
         std::ifstream in("cellular_automata.bin", std::ios::binary);
@@ -595,6 +639,11 @@ int main() {
         in.read(reinterpret_cast<char*>(&compute0_0_shader_spv[0]), compute0_0_shader_spv.size());
         in.close();
     }
+#else
+    std::vector<uint8_t> compute0_0_shader_spv = {
+        #include "cellular_automata.bin.h"
+    };
+#endif
 
     VkShaderModuleCreateInfo vk_compute_pass0_0_shader_module_create_info = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -697,6 +746,8 @@ int main() {
     bool left_click = false;
     bool right_click = false;
     bool paused = false;
+    bool failed_swapchain = false;
+    bool minimized = false;
 
     SDL_DisplayMode const* sdl_display_mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(sdl_window));
     if (sdl_display_mode != nullptr) {
@@ -705,7 +756,7 @@ int main() {
 
     SDL_Event sdl_event;
     p_uniforms->visual_mode = 8;
-    p_uniforms->v = 0x80;
+    p_uniforms->v = 0x20000080;
     while (running) {
         bool compute = false;
         bool render = false;
@@ -754,6 +805,11 @@ int main() {
                         }
                     } else if (sdl_event.button.button == SDL_BUTTON_RIGHT) {
                         right_click = sdl_event.button.down;
+                        if (right_click) {
+                            p_uniforms->v = (p_uniforms->v & ~0x100) | 0x100;
+                        } else {
+                            p_uniforms->v &= ~0x100;
+                        }
                     }
                     break;
                 case SDL_EVENT_KEY_DOWN:
@@ -827,7 +883,14 @@ int main() {
                 case SDL_EVENT_MOUSE_WHEEL:
                     view_x += sdl_event.wheel.x;
                     view_y -= sdl_event.wheel.y;
-                    p_uniforms->v = (p_uniforms->v & 0xffffff) | (std::max(0u, std::min(255u, (((p_uniforms->v >> 24) + ((sdl_event.wheel.integer_y > 0) ? 1 : -1))))) << 24);
+                    p_uniforms->v = (p_uniforms->v & 0xffffff) | (std::min(255u, static_cast<uint32_t>(std::max(0, static_cast<int32_t>((((p_uniforms->v >> 24) + ((sdl_event.wheel.integer_y > 0) ? 1 : -1))))))) << 24);
+                    break;
+                case SDL_EVENT_WINDOW_MINIMIZED:
+                    minimized = true;
+                    break;
+                case SDL_EVENT_WINDOW_RESTORED:
+                case SDL_EVENT_WINDOW_MAXIMIZED:
+                    minimized = false;
                     break;
             }
 
@@ -836,30 +899,40 @@ int main() {
             }
         }
 
-        p_uniforms->v = (p_uniforms->v & ~0x3f) | ((!advance && (paused || !compute)) ? 0x20 : 0x00) | (left_click ? 0x58 : 0x00) | 0xff000000;
-        p_uniforms->x = mouse_x * static_cast<float>(CELLULAR_AUTOMATA_GRID_WIDTH) / WINDOW_WIDTH;
-        p_uniforms->y = mouse_y * static_cast<float>(CELLULAR_AUTOMATA_GRID_HEIGHT) / WINDOW_HEIGHT;
+        if (minimized) {
+            render = false;
+        }
+
+        p_uniforms->v = (p_uniforms->v & ~0x3f) | ((!advance && (paused || !compute)) ? 0x20 : 0x00) | (left_click ? 0x58 : 0x00) | (right_click ? 0x100 : 0x00);
+        std::cout << (p_uniforms->v >> 24) << std::endl;
+        p_uniforms->x = mouse_x * static_cast<float>(width) / window_width;
+        p_uniforms->y = mouse_y * static_cast<float>(height) / window_height;
         p_uniforms->tick = game_tick;
         p_uniforms->bytes_per_cell = CELLULAR_AUTOMATA_BYTES_PER_CELL;
-        p_uniforms->width = CELLULAR_AUTOMATA_GRID_WIDTH;
-        p_uniforms->height = CELLULAR_AUTOMATA_GRID_HEIGHT;
+        p_uniforms->width = width;
+        p_uniforms->height = height;
 
-        if (vkWaitForFences(vk_device, 1, &vk_compute_pass0_0_finished_fence, false, std::numeric_limits<uint64_t>::max()) != VK_SUCCESS) {
-            std::cerr << "Failed to wait for compute pass 0.0 finished fence" << std::endl;
-            return 1;
+        if (!failed_swapchain) {
+            if (vkWaitForFences(vk_device, 1, &vk_compute_pass0_0_finished_fence, false, std::numeric_limits<uint64_t>::max()) != VK_SUCCESS) {
+                std::cerr << "Failed to wait for compute pass 0.0 finished fence" << std::endl;
+                return 1;
+            }
+
+            if (vkResetFences(vk_device, 1, &vk_compute_pass0_0_finished_fence) != VK_SUCCESS) {
+                std::cerr << "Failed to reset compute pass 0.0 finished fence" << std::endl;
+                return 1;
+            }
         }
 
-        if (vkResetFences(vk_device, 1, &vk_compute_pass0_0_finished_fence) != VK_SUCCESS) {
-            std::cerr << "Failed to reset compute pass 0.0 finished fence" << std::endl;
-            return 1;
-        }
+        failed_swapchain = false;
 
         /* acquire swapchain image */
         uint32_t vk_swapchain_backbuffer_index = 0;
         if (render) {
             if (vkAcquireNextImageKHR(vk_device, vk_swapchain, std::numeric_limits<uint64_t>::max(), vk_swapchain_image_acquisition_semaphore, nullptr, &vk_swapchain_backbuffer_index) != VK_SUCCESS) {
                 std::cerr << "Failed to acquire swapchain image index" << std::endl;
-                return 1;
+                failed_swapchain = true;
+                continue;
             }
         }
 
@@ -1018,7 +1091,7 @@ int main() {
 
         vkCmdBindPipeline(vk_compute_queue0_command_pool0_command_buffer0, VK_PIPELINE_BIND_POINT_COMPUTE, vk_compute_pass0_0_pipeline);
         vkCmdBindDescriptorSets(vk_compute_queue0_command_pool0_command_buffer0, VK_PIPELINE_BIND_POINT_COMPUTE, vk_compute_pass0_0_pipeline_layout, 0, 1, &vk_compute_pass0_0_descriptor_pool0_set0, 0, nullptr);
-        vkCmdDispatch(vk_compute_queue0_command_pool0_command_buffer0, CELLULAR_AUTOMATA_GRID_WIDTH / 8, CELLULAR_AUTOMATA_GRID_HEIGHT / 8, 1);
+        vkCmdDispatch(vk_compute_queue0_command_pool0_command_buffer0, width / 8, height / 8, 1);
 
         VkImageMemoryBarrier vk_compute_pass0_0_prepare_for_blit_image_memory_barriers[2] = {
             {
@@ -1094,8 +1167,8 @@ int main() {
                         .z = 0,
                     },
                     {
-                        .x = CELLULAR_AUTOMATA_GRID_WIDTH,
-                        .y = CELLULAR_AUTOMATA_GRID_HEIGHT,
+                        .x = static_cast<int32_t>(width),
+                        .y = static_cast<int32_t>(height),
                         .z = 1,
                     },
                 },
@@ -1112,14 +1185,14 @@ int main() {
                         .z = 0,
                     },
                     {
-                        .x = WINDOW_WIDTH,
-                        .y = WINDOW_HEIGHT,
+                        .x = static_cast<int32_t>(window_width),
+                        .y = static_cast<int32_t>(window_height),
                         .z = 1,
                     },
                 },
             };
 
-            vkCmdBlitImage(vk_compute_queue0_command_pool0_command_buffer0, vk_cellular_automata_render_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, vk_swapchain_backbuffers[vk_swapchain_backbuffer_index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &vk_compute_pass0_0_blit_render_image_to_swapchain, (CELLULAR_AUTOMATA_GRID_WIDTH >= WINDOW_WIDTH / 2) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
+            vkCmdBlitImage(vk_compute_queue0_command_pool0_command_buffer0, vk_cellular_automata_render_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, vk_swapchain_backbuffers[vk_swapchain_backbuffer_index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &vk_compute_pass0_0_blit_render_image_to_swapchain, (width >= window_width / 2) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
 
             VkImageMemoryBarrier vk_swapchain_backbuffer_prepare_for_present_image_memory_barrier =
             {
@@ -1185,7 +1258,6 @@ int main() {
 
             if (vkQueuePresentKHR(queues.compute0_0.vk_queue, &vk_compute_queue0_present_info) != VK_SUCCESS) {
                 std::cerr << "Failed to present compute queue 0" << std::endl;
-                return 1;
             }
         }
 

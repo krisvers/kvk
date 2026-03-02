@@ -140,16 +140,27 @@ void cellular_automata() {
 
     ivec2 coord = ivec2(id % uniforms.width, id / uniforms.width);
     ivec2 pos = coord;
+
     uint value = load(pos);
     Cell cell = decompress(value);
-    if ((uniforms.v & 0x10) != 0 && gl_GlobalInvocationID.xy == uvec2(uniforms.x, uniforms.y)) {
-        float r1 = random(vec2(gl_GlobalInvocationID.xy * uniforms.tick));
-        float r2 = random(vec2(gl_LocalInvocationID.xy * uniforms.tick * r1));
 
+    uint big_cursor_size = uniforms.v >> 24;
+    bool near_big_cursor = gl_GlobalInvocationID.x < uniforms.x + big_cursor_size * uniforms.width / 1024 && gl_GlobalInvocationID.x >= uniforms.x - big_cursor_size * uniforms.width / 1024 && gl_GlobalInvocationID.y < max(uniforms.y + big_cursor_size * uniforms.height / 1024, 1) && gl_GlobalInvocationID.y >= max(uniforms.y - big_cursor_size * uniforms.height / 1024, 1);
+    if ((uniforms.v & 0x110) == 0x110 && near_big_cursor) {
         cell.water_level = 255 - cell.water_level;
         cell.flow_dir.x = -1;
         cell.flow_dir.y = 1;
-        cell.ground_height = uniforms.v >> 24;
+        cell.ground_height = 255;
+    } else if ((uniforms.v & 0x10) != 0 && gl_GlobalInvocationID.xy == uvec2(uniforms.x, uniforms.y)) {
+        cell.water_level = 255 - cell.water_level;
+        cell.flow_dir.x = -1;
+        cell.flow_dir.y = 1;
+        cell.ground_height = 255;
+    } else if ((uniforms.v & 0x100) != 0 && near_big_cursor) {
+        cell.water_level = 0x0;
+        cell.flow_dir.x = 0;
+        cell.flow_dir.y = 0;
+        cell.ground_height = 0;
     }
     
     if ((uniforms.v & 0x80) != 0) {
