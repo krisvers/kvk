@@ -53,7 +53,7 @@ int main() {
         return 1;
     }
 
-    SDL_Window* sdl_window = SDL_CreateWindow("cellular automata", WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_VULKAN);
+    SDL_Window* sdl_window = SDL_CreateWindow("fuzzy snakes | cellular automata", WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_VULKAN);
     if (sdl_window == nullptr) {
         std::cerr << "SDL_CreateWindow Error: " << SDL_GetError() << std::endl;
         return 1;
