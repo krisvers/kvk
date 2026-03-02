@@ -689,7 +689,7 @@ int main() {
     float mouse_y = 0;
     float zoom = 1.0f;
 
-    float frames_per_tick = 13.0f;
+    float frames_per_tick = 4.0f;
     uint32_t tick = 0;
     uint32_t frame = 0;
     uint32_t game_tick = 0;
@@ -698,12 +698,18 @@ int main() {
     bool right_click = false;
     bool paused = false;
 
+    SDL_DisplayMode const* sdl_display_mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(sdl_window));
+    if (sdl_display_mode != nullptr) {
+        frames_per_tick = sdl_display_mode->refresh_rate / 60.0f * 4.0f;
+    }
+
     SDL_Event sdl_event;
     p_uniforms->visual_mode = 8;
     p_uniforms->v = 0x80;
     while (running) {
         bool compute = false;
         bool render = false;
+        bool advance = false;
         frames_per_tick = std::max(std::floor(frames_per_tick * 5.0f) / 5.0f, 0.2f);
 
         if (frames_per_tick >= 1.0f) {
@@ -725,9 +731,6 @@ int main() {
         if (frame == 1 || tick == 1) {
             p_uniforms->v = 0;
         }
-
-        SDL_Delay(1);
-        p_uniforms->v = (p_uniforms->v & ~0x3f) | ((paused || !compute) ? 0x20 : 0x00) | (left_click ? 0x58 : 0x00) | 0xff000000;
 
         while (SDL_PollEvent(&sdl_event)) {
             switch (sdl_event.type) {
@@ -779,6 +782,8 @@ int main() {
                             break;
                         case SDLK_RIGHT:
                             p_uniforms->v &= ~0x20;
+                            advance = true;
+                            compute = true;
                             break;
                         case SDLK_UP:
                             if (frames_per_tick < 1.0f) {
@@ -831,7 +836,7 @@ int main() {
             }
         }
 
-        std::cout << std::hex << p_uniforms->v << std::endl;
+        p_uniforms->v = (p_uniforms->v & ~0x3f) | ((!advance && (paused || !compute)) ? 0x20 : 0x00) | (left_click ? 0x58 : 0x00) | 0xff000000;
         p_uniforms->x = mouse_x * static_cast<float>(CELLULAR_AUTOMATA_GRID_WIDTH) / WINDOW_WIDTH;
         p_uniforms->y = mouse_y * static_cast<float>(CELLULAR_AUTOMATA_GRID_HEIGHT) / WINDOW_HEIGHT;
         p_uniforms->tick = game_tick;

@@ -269,8 +269,7 @@ void cellular_automata() {
         }
     }
 
-    store_cell(id, cell);
-    
+    store_cell(id, cell);    
     if (uniforms.visual_mode == VISUAL_MODE_WATER_INTENSITY) {
         float t = 1 - cell.water_level / 255.0;
         color = intensity_color(t);
