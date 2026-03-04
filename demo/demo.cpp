@@ -8,8 +8,13 @@
 
 #include "kvk.h"
 
+#define VK_ONLY_EXPORTED_PROTOTYPES
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
+
+#include "imgui.h"
+#include "imgui_impl_sdl3.h"
+#include "imgui_impl_vulkan.h"
 
 #define CELLULAR_AUTOMATA_GRID_WIDTH 512
 #define CELLULAR_AUTOMATA_GRID_HEIGHT 256
@@ -203,6 +208,7 @@ int main(int argc, char** argv) {
             .minimum_features = {
                 .shaderStorageBufferArrayDynamicIndexing = true,
                 .shaderStorageImageArrayDynamicIndexing = true,
+                .shaderInt64 = true,
             },
             .minimum_limits = {},
             .required_extensions = {},
@@ -319,57 +325,59 @@ int main(int argc, char** argv) {
         .vk_backbuffers = vk_swapchain_backbuffers,
     };
 
+    std::vector<kvk::SwapchainPreference> swapchain_preferences = {
+        {
+            .image_count = 3,
+            .layer_count = 1,
+            .vk_surface_format = {
+                .format = VK_FORMAT_B8G8R8A8_SRGB,
+                .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+            },
+            .vk_present_mode = VK_PRESENT_MODE_MAILBOX_KHR,
+        },
+        {
+            .image_count = 3,
+            .layer_count = 1,
+            .vk_surface_format = {
+                .format = VK_FORMAT_B8G8R8A8_SRGB,
+                .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+            },
+            .vk_present_mode = VK_PRESENT_MODE_FIFO_RELAXED_KHR,
+        },
+        {
+            .image_count = 2,
+            .layer_count = 1,
+            .vk_surface_format = {
+                .format = VK_FORMAT_B8G8R8A8_SRGB,
+                .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+            },
+            .vk_present_mode = VK_PRESENT_MODE_FIFO_RELAXED_KHR,
+        },
+        {
+            .image_count = 3,
+            .layer_count = 1,
+            .vk_surface_format = {
+                .format = VK_FORMAT_B8G8R8A8_SRGB,
+                .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+            },
+            .vk_present_mode = VK_PRESENT_MODE_FIFO_KHR,
+        },
+        {
+            .image_count = 2,
+            .layer_count = 1,
+            .vk_surface_format = {
+                .format = VK_FORMAT_B8G8R8A8_SRGB,
+                .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+            },
+            .vk_present_mode = VK_PRESENT_MODE_FIFO_KHR,
+        },
+    };
+
     if (kvk::create_swapchain(vk_device, {
         .vk_physical_device = vk_physical_device,
         .vk_surface = vk_surface,
-        .vk_image_usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-        .preferences = {
-            {
-                .image_count = 3,
-                .layer_count = 1,
-                .vk_surface_format = {
-                    .format = VK_FORMAT_B8G8R8A8_SRGB,
-                    .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
-                },
-                .vk_present_mode = VK_PRESENT_MODE_MAILBOX_KHR,
-            },
-            {
-                .image_count = 3,
-                .layer_count = 1,
-                .vk_surface_format = {
-                    .format = VK_FORMAT_B8G8R8A8_SRGB,
-                    .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
-                },
-                .vk_present_mode = VK_PRESENT_MODE_FIFO_RELAXED_KHR,
-            },
-            {
-                .image_count = 2,
-                .layer_count = 1,
-                .vk_surface_format = {
-                    .format = VK_FORMAT_B8G8R8A8_SRGB,
-                    .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
-                },
-                .vk_present_mode = VK_PRESENT_MODE_FIFO_RELAXED_KHR,
-            },
-            {
-                .image_count = 3,
-                .layer_count = 1,
-                .vk_surface_format = {
-                    .format = VK_FORMAT_B8G8R8A8_SRGB,
-                    .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
-                },
-                .vk_present_mode = VK_PRESENT_MODE_FIFO_KHR,
-            },
-            {
-                .image_count = 2,
-                .layer_count = 1,
-                .vk_surface_format = {
-                    .format = VK_FORMAT_B8G8R8A8_SRGB,
-                    .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
-                },
-                .vk_present_mode = VK_PRESENT_MODE_FIFO_KHR,
-            },
-        },
+        .vk_image_usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .preferences = swapchain_preferences,
         .vk_image_sharing_mode = VK_SHARING_MODE_EXCLUSIVE,
         .vk_queue_family_indices = {},
         .vk_pre_transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
@@ -380,15 +388,16 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    kvk::SwapchainPreference const& swapchain_preference = swapchain_preferences[swapchain_returns.chosen_preference];
+
     VkSwapchainKHR vk_swapchain = swapchain_returns.vk_swapchain;
-    /*
     std::vector<VkImageView> vk_swapchain_backbuffer_views(vk_swapchain_backbuffers.size());
     for (uint32_t i = 0; i < vk_swapchain_backbuffers.size(); ++i) {
         VkImageViewCreateInfo vk_image_view_create_info = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .image = vk_swapchain_backbuffers[i],
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = VK_FORMAT_B8G8R8A8_SRGB,
+            .format = swapchain_preference.vk_surface_format.format,
             .components = {
                 .r = VK_COMPONENT_SWIZZLE_IDENTITY,
                 .g = VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -409,7 +418,6 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
-    */
 
     /* setup swapchain synchronization primitives */
     VkSemaphoreCreateInfo vk_swapchain_image_acquisition_semaphore_create_info = {
@@ -732,6 +740,53 @@ int main(int argc, char** argv) {
     VkBuffer vk_cellular_automata_input_buffer = vk_cellular_automata_buffer1;
     VkBuffer vk_cellular_automata_output_buffer = vk_cellular_automata_buffer0;
 
+    ImGuiContext* imgui_context = ImGui::CreateContext();
+    if (imgui_context == nullptr) {
+        std::cerr << "Failed to create ImGui context" << std::endl;
+        return 1;
+    }
+
+    ImGuiIO& imgui_io = ImGui::GetIO();
+    imgui_io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+
+    if (!ImGui_ImplSDL3_InitForVulkan(sdl_window)) {
+        std::cerr << "Failed to init ImGui for Vulkan using SDL window" << std::endl;
+        return 1;
+    }
+
+    ImGui_ImplVulkan_InitInfo imgui_vulkan_init_info = {
+        .ApiVersion = VK_MAKE_API_VERSION(0, 1, 2, 197),
+        .Instance = vk_instance,
+        .PhysicalDevice = vk_physical_device,
+        .Device = vk_device,
+        .QueueFamily = queues.compute0_0.family_index,
+        .Queue = queues.compute0_0.vk_queue,
+        .DescriptorPool = nullptr,
+        .DescriptorPoolSize = 1024,
+        .MinImageCount = swapchain_preference.image_count,
+        .ImageCount = swapchain_preference.image_count,
+        .PipelineInfoMain = {
+            .RenderPass = nullptr,
+            .Subpass = 0,
+            .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
+            .PipelineRenderingCreateInfo = {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR,
+                .colorAttachmentCount = 1,
+                .pColorAttachmentFormats = &swapchain_preference.vk_surface_format.format,
+                .depthAttachmentFormat = VK_FORMAT_UNDEFINED,
+                .stencilAttachmentFormat = VK_FORMAT_UNDEFINED,
+            },
+        },
+        .UseDynamicRendering = true,
+        .Allocator = nullptr,
+        .MinAllocationSize = 1024 * 1024,
+    };
+
+    if (!ImGui_ImplVulkan_Init(&imgui_vulkan_init_info)) {
+        std::cerr << "Failed to init ImGui Vulkan" << std::endl;
+        return 1;
+    }
+
     int32_t view_x = 0;
     int32_t view_y = 0;
     float mouse_x = 0;
@@ -753,6 +808,9 @@ int main(int argc, char** argv) {
     if (sdl_display_mode != nullptr) {
         frames_per_tick = sdl_display_mode->refresh_rate / 60.0f * 8.0f;
     }
+
+    PFN_vkCmdBeginRenderingKHR vkCmdBeginRenderingKHR = reinterpret_cast<PFN_vkCmdBeginRenderingKHR>(vkGetInstanceProcAddr(vk_instance, "vkCmdBeginRenderingKHR"));
+    PFN_vkCmdEndRenderingKHR vkCmdEndRenderingKHR = reinterpret_cast<PFN_vkCmdEndRenderingKHR>(vkGetInstanceProcAddr(vk_instance, "vkCmdEndRenderingKHR"));
 
     SDL_Event sdl_event;
     p_uniforms->visual_mode = 8;
@@ -785,6 +843,8 @@ int main(int argc, char** argv) {
         }
 
         while (SDL_PollEvent(&sdl_event)) {
+            ImGui_ImplSDL3_ProcessEvent(&sdl_event);
+
             switch (sdl_event.type) {
                 case SDL_EVENT_QUIT:
                     running = false;
@@ -797,6 +857,10 @@ int main(int argc, char** argv) {
                     break;
                 case SDL_EVENT_MOUSE_BUTTON_DOWN:
                 case SDL_EVENT_MOUSE_BUTTON_UP:
+                    if (imgui_io.WantCaptureMouse) {
+                        break;
+                    }
+
                     if (sdl_event.button.button == SDL_BUTTON_LEFT) {
                         left_click = sdl_event.button.down;
                         if (left_click) {
@@ -814,6 +878,10 @@ int main(int argc, char** argv) {
                     }
                     break;
                 case SDL_EVENT_KEY_DOWN:
+                    if (imgui_io.WantCaptureKeyboard) {
+                        break;
+                    }
+
                     switch (sdl_event.key.key) {
                         case SDLK_R:
                             p_uniforms->v = (p_uniforms->v & ~0x80) | 0x80;
@@ -873,6 +941,10 @@ int main(int argc, char** argv) {
                     }
                     break;
                 case SDL_EVENT_KEY_UP:
+                    if (imgui_io.WantCaptureKeyboard) {
+                        break;
+                    }
+
                     switch (sdl_event.key.key) {
                         case SDLK_R:
                             p_uniforms->v &= ~0x80;
@@ -909,8 +981,6 @@ int main(int argc, char** argv) {
         }
 
         p_uniforms->v = (p_uniforms->v & ~0x23f) | ((!(advance || reverse) && (paused || !compute)) ? 0x20 : 0x00) | (reverse ? 0x200 : 0x000) | (left_click ? 0x58 : 0x00) | (right_click ? 0x100 : 0x00);
-        std::cout << advance << ", " << reverse << ", " << paused << ", " << compute << std::endl;
-        std::cout << std::hex << p_uniforms->v << std::endl;
         p_uniforms->x = mouse_x * static_cast<float>(width) / window_width;
         p_uniforms->y = mouse_y * static_cast<float>(height) / window_height;
         p_uniforms->tick = game_tick;
@@ -941,6 +1011,20 @@ int main(int argc, char** argv) {
                 continue;
             }
         }
+
+        ImGui_ImplVulkan_NewFrame();
+        ImGui_ImplSDL3_NewFrame();
+        ImGui::NewFrame();
+
+        ImGui::Begin("Instruction");
+        ImGui::Text("To play, draw on the cells using the mouse");
+        ImGui::Text("Left click to draw, right click to erase using large cursor, press both to draw using large cursor");
+        ImGui::Text("Scroll up to increase large cursor size, down to decrease large cursor size");
+        ImGui::Text("Space to pause simulation, right arrow to advance, left arrow to reverse");
+        ImGui::Text("Press R to restart");
+        ImGui::End();
+
+        ImGui::Render();
 
         /* prepare for compute pass 0.0 */
         {
@@ -1200,12 +1284,69 @@ int main(int argc, char** argv) {
 
             vkCmdBlitImage(vk_compute_queue0_command_pool0_command_buffer0, vk_cellular_automata_render_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, vk_swapchain_backbuffers[vk_swapchain_backbuffer_index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &vk_compute_pass0_0_blit_render_image_to_swapchain, (width >= window_width / 2) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
 
-            VkImageMemoryBarrier vk_swapchain_backbuffer_prepare_for_present_image_memory_barrier =
-            {
+            VkImageMemoryBarrier vk_swapchain_backbuffer_prepare_for_imgui_render_pass0_0_image_memory_barrier = {
                 .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
                 .srcAccessMask = 0,
-                .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+                .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
                 .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .srcQueueFamilyIndex = queues.compute0_0.family_index,
+                .dstQueueFamilyIndex = queues.compute0_0.family_index,
+                .image = vk_swapchain_backbuffers[vk_swapchain_backbuffer_index],
+                .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                .layerCount = 1,
+                },
+            };
+
+            vkCmdPipelineBarrier(vk_compute_queue0_command_pool0_command_buffer0,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
+                0, nullptr,
+                0, nullptr,
+                1,
+                &vk_swapchain_backbuffer_prepare_for_imgui_render_pass0_0_image_memory_barrier
+            );
+
+            VkRenderingAttachmentInfoKHR vk_imgui_render_pass0_0_color_attachment_info = {
+                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR,
+                .imageView = vk_swapchain_backbuffer_views[vk_swapchain_backbuffer_index],
+                .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                .clearValue = {
+                    .color = {
+                        .float32 = { 0.0f, 0.0f, 0.0f, 1.0f },
+                    },
+                },
+            };
+
+            VkRenderingInfoKHR vk_imgui_render_pass0_0_rendering_info = {
+                .sType = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR,
+                .renderArea = {
+                    .offset = {
+                        .x = 0,
+                        .y = 0,
+                    },
+                    .extent = swapchain_returns.vk_current_extent,
+                },
+                .layerCount = 1,
+                .viewMask = 0,
+                .colorAttachmentCount = 1,
+                .pColorAttachments = &vk_imgui_render_pass0_0_color_attachment_info,
+            };
+
+            vkCmdBeginRenderingKHR(vk_compute_queue0_command_pool0_command_buffer0, &vk_imgui_render_pass0_0_rendering_info);
+            ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), vk_compute_queue0_command_pool0_command_buffer0, nullptr);
+            vkCmdEndRenderingKHR(vk_compute_queue0_command_pool0_command_buffer0);
+
+            VkImageMemoryBarrier vk_swapchain_backbuffer_prepare_for_present_image_memory_barrier = {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+                .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                 .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
                 .srcQueueFamilyIndex = queues.compute0_0.family_index,
                 .dstQueueFamilyIndex = queues.compute0_0.family_index,
@@ -1220,7 +1361,7 @@ int main(int argc, char** argv) {
             };
 
             vkCmdPipelineBarrier(vk_compute_queue0_command_pool0_command_buffer0,
-                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
                 0, nullptr,
                 0, nullptr,
                 1,
@@ -1275,6 +1416,10 @@ int main(int argc, char** argv) {
 
     vkDeviceWaitIdle(vk_device);
 
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
+    ImGui::DestroyContext();
+
     /* cleaup synchronization primitives */
     vkDestroyFence(vk_device, vk_compute_pass0_0_finished_fence, nullptr);
 
@@ -1304,7 +1449,7 @@ int main(int argc, char** argv) {
     /* cleanup swapchain */
     for (uint32_t i = 0; i < vk_swapchain_backbuffers.size(); ++i) {
         vkDestroySemaphore(vk_device, vk_swapchain_image_finished_semaphores[i], nullptr);
-        //vkDestroyImageView(vk_device, vk_swapchain_backbuffer_views[i], nullptr);
+        vkDestroyImageView(vk_device, vk_swapchain_backbuffer_views[i], nullptr);
     }
     vkDestroySemaphore(vk_device, vk_swapchain_image_acquisition_semaphore, nullptr);
     vkDestroySwapchainKHR(vk_device, vk_swapchain, nullptr);
