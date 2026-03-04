@@ -11,13 +11,13 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
-#define CELLULAR_AUTOMATA_GRID_WIDTH 4096
-#define CELLULAR_AUTOMATA_GRID_HEIGHT 2048
+#define CELLULAR_AUTOMATA_GRID_WIDTH 512
+#define CELLULAR_AUTOMATA_GRID_HEIGHT 256
 #define WINDOW_WIDTH 1664
 #define WINDOW_HEIGHT 832
-#define CELLULAR_AUTOMATA_BYTES_PER_CELL 4
+#define CELLULAR_AUTOMATA_BYTES_PER_CELL 8
 
-#define EMBED_SHADER
+//#define EMBED_SHADER
 
 struct Queue {
     VkQueue vk_queue;
@@ -738,7 +738,7 @@ int main(int argc, char** argv) {
     float mouse_y = 0;
     float zoom = 1.0f;
 
-    float frames_per_tick = 4.0f;
+    float frames_per_tick = 1.0f;
     uint32_t tick = 0;
     uint32_t frame = 0;
     uint32_t game_tick = 0;
@@ -751,16 +751,17 @@ int main(int argc, char** argv) {
 
     SDL_DisplayMode const* sdl_display_mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(sdl_window));
     if (sdl_display_mode != nullptr) {
-        frames_per_tick = sdl_display_mode->refresh_rate / 60.0f * 4.0f;
+        frames_per_tick = sdl_display_mode->refresh_rate / 60.0f * 8.0f;
     }
 
     SDL_Event sdl_event;
     p_uniforms->visual_mode = 8;
-    p_uniforms->v = 0x20000080;
+    p_uniforms->v = 0x01000080;
     while (running) {
         bool compute = false;
         bool render = false;
         bool advance = false;
+        bool reverse = false;
         frames_per_tick = std::max(std::floor(frames_per_tick * 5.0f) / 5.0f, 0.2f);
 
         if (frames_per_tick >= 1.0f) {
@@ -780,7 +781,7 @@ int main(int argc, char** argv) {
         }
 
         if (frame == 1 || tick == 1) {
-            p_uniforms->v = 0;
+            p_uniforms->v = 0x01000000;
         }
 
         while (SDL_PollEvent(&sdl_event)) {
@@ -820,6 +821,7 @@ int main(int argc, char** argv) {
                         case SDLK_SPACE:
                             if (!sdl_event.key.repeat) {
                                 paused = !paused;
+                                p_uniforms->v = (p_uniforms->v & ~0x400) | (!paused ? 0x400 : 0x00);
                             }
                             break;
                         case SDLK_0:
@@ -836,8 +838,11 @@ int main(int argc, char** argv) {
                                 p_uniforms->visual_mode = sdl_event.key.key - SDLK_0;
                             }
                             break;
+                        case SDLK_LEFT:
+                            reverse = true;
+                            compute = true;
+                            break;
                         case SDLK_RIGHT:
-                            p_uniforms->v &= ~0x20;
                             advance = true;
                             compute = true;
                             break;
@@ -883,7 +888,7 @@ int main(int argc, char** argv) {
                 case SDL_EVENT_MOUSE_WHEEL:
                     view_x += sdl_event.wheel.x;
                     view_y -= sdl_event.wheel.y;
-                    p_uniforms->v = (p_uniforms->v & 0xffffff) | (std::min(255u, static_cast<uint32_t>(std::max(0, static_cast<int32_t>((((p_uniforms->v >> 24) + ((sdl_event.wheel.integer_y > 0) ? 1 : -1))))))) << 24);
+                    p_uniforms->v = (p_uniforms->v & 0xffffff) | (std::min(255u, static_cast<uint32_t>(std::max(1, static_cast<int32_t>((((p_uniforms->v >> 24) + ((sdl_event.wheel.integer_y > 0) ? 1 : -1))))))) << 24);
                     break;
                 case SDL_EVENT_WINDOW_MINIMIZED:
                     minimized = true;
@@ -903,8 +908,9 @@ int main(int argc, char** argv) {
             render = false;
         }
 
-        p_uniforms->v = (p_uniforms->v & ~0x3f) | ((!advance && (paused || !compute)) ? 0x20 : 0x00) | (left_click ? 0x58 : 0x00) | (right_click ? 0x100 : 0x00);
-        std::cout << (p_uniforms->v >> 24) << std::endl;
+        p_uniforms->v = (p_uniforms->v & ~0x23f) | ((!(advance || reverse) && (paused || !compute)) ? 0x20 : 0x00) | (reverse ? 0x200 : 0x000) | (left_click ? 0x58 : 0x00) | (right_click ? 0x100 : 0x00);
+        std::cout << advance << ", " << reverse << ", " << paused << ", " << compute << std::endl;
+        std::cout << std::hex << p_uniforms->v << std::endl;
         p_uniforms->x = mouse_x * static_cast<float>(width) / window_width;
         p_uniforms->y = mouse_y * static_cast<float>(height) / window_height;
         p_uniforms->tick = game_tick;
