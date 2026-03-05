@@ -90,8 +90,14 @@ VkResult create_instance(InstanceCreateInfo const& create_info, VkInstance& vk_i
 
     /* recommended & optional presets */
     if (create_info.presets.recommended || create_info.presets.create_enumerate_portability_instance) {
-        enabled_extensions.push_back("VK_KHR_portability_enumeration");
-        vk_flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+#ifndef KVK_APPLE
+        if (!create_info.presets.recommended) {
+#endif
+            enabled_extensions.push_back("VK_KHR_portability_enumeration");
+            vk_flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+#ifndef KVK_APPLE
+        }
+#endif
     }
 
     if (create_info.presets.recommended || create_info.presets.enable_surfaces) {
@@ -584,7 +590,7 @@ VkResult create_device(VkInstance vk_instance, DeviceCreateInfo const& create_in
     VkPhysicalDeviceFeatures enabled_features = {};
     if (create_info.vk_enabled_features.has_value()) {
         enabled_features = create_info.vk_enabled_features.value();
-    } else if (create_info.vk_physical_device != nullptr) {
+    } else if (create_info.vk_physical_device == nullptr) {
         enabled_features = create_info.physical_device_query.minimum_features;
     }
 
