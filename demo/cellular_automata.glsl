@@ -20,6 +20,7 @@ layout(std140, set = 0, binding = 2) uniform Uniforms {
     uint width;
     uint height;
     uint visual_mode;
+    uint conditions;
 } uniforms;
 
 layout(set = 0, binding = 3, rgba8) uniform image2D output_image;
@@ -54,18 +55,20 @@ void cellular_automata() {
     uint64_t value = load(pos);
     uint big_cursor_size = uniforms.v >> 24;
     bool near_big_cursor = int(gl_GlobalInvocationID.x) <= int(uniforms.x + big_cursor_size * uniforms.width / 512 * uniforms.height / uniforms.width) && int(gl_GlobalInvocationID.x) >= int(uniforms.x - big_cursor_size * uniforms.width / 512 * uniforms.height / uniforms.width) && int(gl_GlobalInvocationID.y) <= max(int(uniforms.y + big_cursor_size * uniforms.height / 512), 0) && int(gl_GlobalInvocationID.y) >= max(int(uniforms.y - big_cursor_size * uniforms.height / 512), 0);
-    if ((uniforms.v & 0x110) == 0x110 && near_big_cursor) {
-        value |= 0x80000000L;
-    } else if ((uniforms.v & 0x10) != 0 && gl_GlobalInvocationID.xy == uvec2(uniforms.x, uniforms.y)) {
-        value |= 0x80000000L;
-    } else if ((uniforms.v & 0x100) != 0 && near_big_cursor && uniforms.tick % 2 == 0) {
+    if ((uniforms.v & 0x10) != 0 && near_big_cursor) {
+        if ((uniforms.v & 0x20) != 0) {
+            value |= 0x0000000080000000L;
+        } else {
+            value |= 0x0000000100000000L;
+        }
+    } else if ((uniforms.v & 0x100) != 0 && near_big_cursor) {
         value = 0x00000000L;
     }
     
     if ((uniforms.v & 0x80) != 0) {
         value = 0x00;
     } else if ((uniforms.v & 0x400) != 0) {
-        value &= 0xffffffff;
+        //value ;
     }
     
     vec3 color = vec3(-1.0);
@@ -85,20 +88,27 @@ void cellular_automata() {
             uint64_t c2 = load(pos + ivec2( 1,  1));
 
             uint count = uint(
-                (a0 >> 31) +
-                (a1 >> 31) +
-                (a2 >> 31) +
-                (b0 >> 31) +
-                (b2 >> 31) +
-                (c0 >> 31) +
-                (c1 >> 31) +
-                (c2 >> 31)
+                ((a0 >> 31) & 0x1) +
+                ((a1 >> 31) & 0x1) +
+                ((a2 >> 31) & 0x1) +
+                ((b0 >> 31) & 0x1) +
+                ((b2 >> 31) & 0x1) +
+                ((c0 >> 31) & 0x1) +
+                ((c1 >> 31) & 0x1) +
+                ((c2 >> 31) & 0x1)
             );
 
-            bool was_living = (value & 0x40000000L) != 0;
-            if (count == 3 || count == 2 && was_living) {
-                value |= 0x80000000L;
-            }
+            
+            int cond = int((uniforms.conditions >> (count << 1)) & 0x3) - 1;
+            int living = int(bool((value & 0x40000000L) != 0));
+            living += cond;
+
+            value |= (living > 0) ? 0x80000000L : 0x00L;
+        
+            //bool was_living = (value & 0x40000000L) != 0;
+            //if (count == 3 || count == 2 && was_living) {
+            //    value |= 0x80000000L;
+            //}
         }
     }
 

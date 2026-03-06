@@ -44,37 +44,8 @@ struct Uniforms {
     uint32_t width;
     uint32_t height;
     uint32_t visual_mode;
+    uint32_t conditions;
 };
-
-#include "imgui_internal.h"
-
-/* adapted from https://github.com/ocornut/imgui/issues/2644#issuecomment-507023896 */
-
-namespace ImGui {
-
-bool CheckBoxTristate(const char* label, int* v_tristate) {
-    bool ret;
-    if (*v_tristate == -1) {
-        ImGui::PushItemFlag(ImGuiItemFlags_ButtonRepeat, true);
-        bool b = false;
-        ret = ImGui::Checkbox(label, &b);
-        if (ret) {
-            *v_tristate = 1;
-        }
-
-        ImGui::PopItemFlag();
-    } else {
-        bool b = (*v_tristate != 0);
-        ret = ImGui::Checkbox(label, &b);
-        if (ret) {
-            *v_tristate = static_cast<int>(b);
-        }
-    }
-
-    return ret;
-}
-
-}
 
 int main(int argc, char** argv) {
     uint32_t width = CELLULAR_AUTOMATA_GRID_WIDTH;
@@ -836,13 +807,15 @@ int main(int argc, char** argv) {
 
     SDL_DisplayMode const* sdl_display_mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(sdl_window));
     if (sdl_display_mode != nullptr) {
-        frames_per_tick = sdl_display_mode->refresh_rate / 60.0f * 8.0f;
+        frames_per_tick = sdl_display_mode->refresh_rate / 60.0f * 1.0f;
     }
 
     PFN_vkCmdBeginRenderingKHR vkCmdBeginRenderingKHR = reinterpret_cast<PFN_vkCmdBeginRenderingKHR>(vkGetInstanceProcAddr(vk_instance, "vkCmdBeginRenderingKHR"));
     PFN_vkCmdEndRenderingKHR vkCmdEndRenderingKHR = reinterpret_cast<PFN_vkCmdEndRenderingKHR>(vkGetInstanceProcAddr(vk_instance, "vkCmdEndRenderingKHR"));
 
     SDL_Event sdl_event;
+    int live_count[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
     p_uniforms->visual_mode = 8;
     p_uniforms->v = 0x01000080;
     while (running) {
@@ -1048,28 +1021,69 @@ int main(int argc, char** argv) {
 
         ImGui::Begin("Instruction");
         ImGui::Text("To play, draw on the cells using the mouse");
-        ImGui::Text("Left click to draw, right click to erase using large cursor, press both to draw using large cursor");
-        ImGui::Text("Scroll up to increase large cursor size, down to decrease large cursor size");
+        ImGui::Text("Left click to draw, right click to erase");
+        ImGui::Text("Scroll up to increase cursor size, down to decrease cursor size");
         ImGui::Text("Space to pause simulation, right arrow to advance, left arrow to reverse");
         ImGui::Text("Press R to restart");
+        ImGui::Text("");
+        ImGui::Text("Play around with the rule set");
+        ImGui::Text("If you get lost, you can always use a preset");
         ImGui::End();
 
-        bool min = false;
-        bool max = true;
-
-        int live_count[9];
         ImGui::Begin("Rule Set");
-        ImGui::Text("Behavior when neighbor count is:");
-        ImGui::CheckBoxTristate("0", &live_count[0]);
-        ImGui::CheckBoxTristate("1", &live_count[1]);
-        ImGui::CheckBoxTristate("2", &live_count[2]);
-        ImGui::CheckBoxTristate("3", &live_count[3]);
-        ImGui::CheckBoxTristate("4", &live_count[4]);
-        ImGui::CheckBoxTristate("5", &live_count[5]);
-        ImGui::CheckBoxTristate("6", &live_count[6]);
-        ImGui::CheckBoxTristate("7", &live_count[7]);
-        ImGui::CheckBoxTristate("8", &live_count[8]);
+        ImGui::Text("Behavior when certain neighbor count:");
+        ImGui::Text("(Note):");
+        ImGui::Text(" -1 means cell always dies");
+        ImGui::Text("  0 means cell continues with previous state");
+        ImGui::Text("  1 means cell always lives");
+
+        if (ImGui::SmallButton("Load Preset: \"Conway's Game of Life\"")) {
+            live_count[0] = -1;
+            live_count[1] = -1;
+            live_count[2] =  0;
+            live_count[3] =  1;
+            live_count[4] = -1;
+            live_count[5] = -1;
+            live_count[6] = -1;
+            live_count[7] = -1;
+            live_count[8] = -1;
+        }
+
+        if (ImGui::SmallButton("Load Preset: \"High Life\"")) {
+            live_count[0] = -1;
+            live_count[1] = -1;
+            live_count[2] =  0;
+            live_count[3] =  1;
+            live_count[4] = -1;
+            live_count[5] = -1;
+            live_count[6] =  1;
+            live_count[7] = -1;
+            live_count[8] = -1;
+        }
+
+        ImGui::SliderInt("0 neighbors", &live_count[0], -1, 1);
+        ImGui::SliderInt("1 neighbors", &live_count[1], -1, 1);
+        ImGui::SliderInt("2 neighbors", &live_count[2], -1, 1);
+        ImGui::SliderInt("3 neighbors", &live_count[3], -1, 1);
+        ImGui::SliderInt("4 neighbors", &live_count[4], -1, 1);
+        ImGui::SliderInt("5 neighbors", &live_count[5], -1, 1);
+        ImGui::SliderInt("6 neighbors", &live_count[6], -1, 1);
+        ImGui::SliderInt("7 neighbors", &live_count[7], -1, 1);
+        ImGui::SliderInt("8 neighbors", &live_count[8], -1, 1);
         ImGui::End();
+
+        p_uniforms->conditions =
+            ((live_count[0] + 1)) |
+            ((live_count[1] + 1) << 2) |
+            ((live_count[2] + 1) << 4) |
+            ((live_count[3] + 1) << 6) |
+            ((live_count[4] + 1) << 8) |
+            ((live_count[5] + 1) << 10) |
+            ((live_count[6] + 1) << 12) |
+            ((live_count[7] + 1) << 14) |
+            ((live_count[8] + 1) << 16);
+
+        std::cout << std::hex << p_uniforms->conditions << std::endl;
 
         ImGui::Render();
 
