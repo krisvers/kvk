@@ -52,8 +52,12 @@ class IPass {
 public:
     IPass() = default;
 
+    virtual void set_swapchain_backbuffer(VkImage vk_backbuffer, VkImageView vk_backbuffer_view, VkExtent2D vk_extent, VkFormat vk_format) = 0;
+
+    virtual bool pre_transition(VkCommandBuffer vk_command_buffer) = 0;
     virtual bool bind(VkCommandBuffer vk_command_buffer) = 0;
     virtual bool execute(VkCommandBuffer vk_command_buffer) = 0;
+    virtual bool post_transition(VkCommandBuffer vk_command_buffer) = 0;
 
     virtual VkSemaphore finished_semaphore() = 0;
     virtual VkFence finished_fence() = 0;
@@ -68,6 +72,11 @@ private:
     VkPipelineLayout _compute_pipeline_layout;
     VkPipeline _compute_pipeline;
     VkFence _finished_fence;
+
+    VkImage _backbuffer;
+    VkImageView _backbuffer_view;
+    VkExtent2D _backbuffer_extent;
+    VkFormat _backbuffer_format;
 
 public:
     ComputePass0_0(VkDevice vk_device) : _device(vk_device) {
@@ -222,6 +231,13 @@ public:
         vkDestroyDescriptorSetLayout(_device, _set_layout, nullptr);
     }
 
+    void set_swapchain_backbuffer(VkImage vk_backbuffer, VkImageView vk_backbuffer_view, VkExtent2D vk_extent, VkFormat vk_format) override {
+        _backbuffer = vk_backbuffer;
+        _backbuffer_view = vk_backbuffer_view;
+        _backbuffer_extent = vk_extent;
+        _backbuffer_format = vk_format;
+    }
+
     bool update_descriptor_sets(kvk::resource::MonoAllocationResident const& input_buffer_resident, kvk::resource::MonoAllocationResident const& output_buffer_resident, kvk::resource::MonoAllocationResident const& uniform_buffer_resident, VkImageView vk_render_image_view) {
         VkDescriptorBufferInfo binding0_buffer_info = {
             .buffer = input_buffer_resident.id.vk_buffer,
@@ -288,6 +304,10 @@ public:
 
         vkUpdateDescriptorSets(_device, sizeof(descriptor_writes) / sizeof(VkWriteDescriptorSet), &descriptor_writes[0], 0, nullptr);
         return true;
+    }
+
+    bool pre_transition(VkCommandBuffer vk_command_buffer) override {
+        
     }
 };
 
