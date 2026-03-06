@@ -22,7 +22,7 @@
 #define WINDOW_HEIGHT 832
 #define CELLULAR_AUTOMATA_BYTES_PER_CELL 8
 
-//#define EMBED_SHADER
+#define EMBED_SHADER
 
 struct Queue {
     VkQueue vk_queue;
