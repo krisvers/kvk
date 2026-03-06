@@ -4,6 +4,7 @@
 #include <iterator>
 #include <vector>
 #include <string>
+#include <stdexcept>
 #include <filesystem>
 
 #include "kvk.h"
@@ -45,6 +46,249 @@ struct Uniforms {
     uint32_t height;
     uint32_t visual_mode;
     uint32_t conditions;
+};
+
+class IPass {
+public:
+    IPass() = default;
+
+    virtual bool bind(VkCommandBuffer vk_command_buffer) = 0;
+    virtual bool execute(VkCommandBuffer vk_command_buffer) = 0;
+
+    virtual VkSemaphore finished_semaphore() = 0;
+    virtual VkFence finished_fence() = 0;
+};
+
+class ComputePass0_0 : public IPass {
+private:
+    VkDevice _device;
+    VkDescriptorSetLayout _set_layout;
+    VkDescriptorPool _descriptor_pool;
+    VkDescriptorSet _descriptor_set;
+    VkPipelineLayout _compute_pipeline_layout;
+    VkPipeline _compute_pipeline;
+    VkFence _finished_fence;
+
+public:
+    ComputePass0_0(VkDevice vk_device) : _device(vk_device) {
+        VkDescriptorSetLayoutBinding descriptor_set_layout_bindings[4] = {
+            {
+                .binding = 0,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .descriptorCount = 1,
+                .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+            },
+            {
+                .binding = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .descriptorCount = 1,
+                .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+            },
+            {
+                .binding = 2,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .descriptorCount = 1,
+                .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+            },
+            {
+                .binding = 3,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                .descriptorCount = 1,
+                .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+            },
+        };
+
+        VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .bindingCount = sizeof(descriptor_set_layout_bindings) / sizeof(VkDescriptorSetLayoutBinding),
+            .pBindings = &descriptor_set_layout_bindings[0],
+        };
+
+        if (vkCreateDescriptorSetLayout(_device, &descriptor_set_layout_create_info, nullptr, &_set_layout) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create compute pass 0.0 descriptor set layout");
+        }
+
+        VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            .setLayoutCount = 1,
+            .pSetLayouts = &_set_layout,
+        };
+
+        if (vkCreatePipelineLayout(_device, &pipeline_layout_create_info, nullptr, &_compute_pipeline_layout) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create compute pass 0.0 pipeline layout");
+        }
+
+        /* load and compile shader */
+#ifndef EMBED_SHADER
+        std::vector<uint8_t> shader_spv(std::filesystem::file_size("cellular_automata.bin"));
+        {
+            std::ifstream in("cellular_automata.bin", std::ios::binary);
+            if (!in.good()) {
+                std::runtime_error("Failed to open cellular_automata.bin");
+            }
+
+            in.read(reinterpret_cast<char*>(&shader_spv[0]), shader_spv.size());
+            in.close();
+        }
+#else
+        std::vector<uint8_t> shader_spv = {
+            #include "cellular_automata.bin.h"
+        };
+#endif
+
+        VkShaderModuleCreateInfo shader_module_create_info = {
+            .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            .codeSize = shader_spv.size(),
+            .pCode = reinterpret_cast<uint32_t const*>(shader_spv.data()),
+        };
+
+        VkShaderModule shader_module;
+        if (vkCreateShaderModule(_device, &shader_module_create_info, nullptr, &shader_module) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create compute pass 0.0 shader module");
+        }
+
+        /* setup compute pass 0.0 pipeline */
+        VkComputePipelineCreateInfo pipeline_create_info = {
+            .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+            .stage = {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                .module = shader_module,
+                .pName = "cellular_automata",
+            },
+            .layout = _compute_pipeline_layout,
+        };
+
+        if (vkCreateComputePipelines(_device, nullptr, 1, &pipeline_create_info, nullptr, &_compute_pipeline) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create compute pass 0.0 pipeline");
+        }
+
+        vkDestroyShaderModule(_device, shader_module, nullptr);
+
+        /* setup descriptor sets */
+        VkDescriptorPoolSize descriptor_pool_sizes[3] = {
+            {
+                .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .descriptorCount = 2,
+            },
+            {
+                .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .descriptorCount = 1,
+            },
+            {
+                .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                .descriptorCount = 1,
+            },
+        };
+
+        VkDescriptorPoolCreateInfo descriptor_pool_create_info = {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            .maxSets = 1,
+            .poolSizeCount = sizeof(descriptor_pool_sizes) / sizeof(VkDescriptorPoolSize),
+            .pPoolSizes = &descriptor_pool_sizes[0],
+        };
+
+        if (vkCreateDescriptorPool(_device, &descriptor_pool_create_info, nullptr, &_descriptor_pool) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create compute pass 0.0 descriptor pool 0");
+        }
+
+        VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .descriptorPool = _descriptor_pool,
+            .descriptorSetCount = 1,
+            .pSetLayouts = &_set_layout,
+        };
+
+        if (vkAllocateDescriptorSets(_device, &descriptor_set_allocate_info, &_descriptor_set) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to allocate compute pass 0.0 descriptor pool 0 set 0");
+        }
+
+        /* setup synchronization primitives */
+        VkFenceCreateInfo finished_fence_create_info = {
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+            .flags = VK_FENCE_CREATE_SIGNALED_BIT,
+        };
+
+        if (vkCreateFence(_device, &finished_fence_create_info, nullptr, &_finished_fence) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create compute pass 0.0 finished fence");
+        }
+    }
+
+    ~ComputePass0_0() {
+        vkDestroyFence(_device, _finished_fence, nullptr);
+        vkDestroyDescriptorPool(_device, _descriptor_pool, nullptr);
+        vkDestroyPipeline(_device, _compute_pipeline, nullptr);
+        vkDestroyPipelineLayout(_device, _compute_pipeline_layout, nullptr);
+        vkDestroyDescriptorSetLayout(_device, _set_layout, nullptr);
+    }
+
+    bool update_descriptor_sets(kvk::resource::MonoAllocationResident const& input_buffer_resident, kvk::resource::MonoAllocationResident const& output_buffer_resident, kvk::resource::MonoAllocationResident const& uniform_buffer_resident, VkImageView vk_render_image_view) {
+        VkDescriptorBufferInfo binding0_buffer_info = {
+            .buffer = input_buffer_resident.id.vk_buffer,
+            .offset = 0,
+            .range = input_buffer_resident.vk_size,
+        };
+
+        VkDescriptorBufferInfo binding1_buffer_info = {
+            .buffer = output_buffer_resident.id.vk_buffer,
+            .offset = 0,
+            .range = output_buffer_resident.vk_size,
+        };
+
+        VkDescriptorBufferInfo binding2_buffer_info = {
+            .buffer = uniform_buffer_resident.id.vk_buffer,
+            .offset = 0,
+            .range = sizeof(Uniforms),
+        };
+
+        VkDescriptorImageInfo binding3_image_info = {
+            .sampler = nullptr,
+            .imageView = vk_render_image_view,
+            .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+        };
+
+        VkWriteDescriptorSet descriptor_writes[4] = {
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = _descriptor_set,
+                .dstBinding = 0,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .pBufferInfo = &binding0_buffer_info,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = _descriptor_set,
+                .dstBinding = 1,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .pBufferInfo = &binding1_buffer_info,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = _descriptor_set,
+                .dstBinding = 2,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .pBufferInfo = &binding2_buffer_info,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = _descriptor_set,
+                .dstBinding = 3,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                .pImageInfo = &binding3_image_info,
+            },
+        };
+
+        vkUpdateDescriptorSets(_device, sizeof(descriptor_writes) / sizeof(VkWriteDescriptorSet), &descriptor_writes[0], 0, nullptr);
+        return true;
+    }
 };
 
 int main(int argc, char** argv) {
@@ -584,160 +828,6 @@ int main(int argc, char** argv) {
     }
 
     /* prepare for pipeline creation */
-    VkDescriptorSetLayoutBinding vk_compute_pass0_0_descriptor_set_layout0_bindings[4] = {
-        {
-            .binding = 0,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-        },
-        {
-            .binding = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-        },
-        {
-            .binding = 2,
-            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-        },
-        {
-            .binding = 3,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-            .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-        },
-    };
-
-    VkDescriptorSetLayoutCreateInfo vk_compute_pass0_0_descriptor_set_layout0_create_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = sizeof(vk_compute_pass0_0_descriptor_set_layout0_bindings) / sizeof(VkDescriptorSetLayoutBinding),
-        .pBindings = &vk_compute_pass0_0_descriptor_set_layout0_bindings[0],
-    };
-
-    VkDescriptorSetLayout vk_compute_pass0_0_descriptor_set_layout0;
-    if (vkCreateDescriptorSetLayout(vk_device, &vk_compute_pass0_0_descriptor_set_layout0_create_info, nullptr, &vk_compute_pass0_0_descriptor_set_layout0) != VK_SUCCESS) {
-        std::cerr << "Failed to create compute pass 0.0 descriptor set layout" << std::endl;
-        return 1;
-    }
-
-    VkPipelineLayoutCreateInfo vk_compute_pass0_0_pipeline_layout_create_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 1,
-        .pSetLayouts = &vk_compute_pass0_0_descriptor_set_layout0,
-    };
-
-    VkPipelineLayout vk_compute_pass0_0_pipeline_layout;
-    if (vkCreatePipelineLayout(vk_device, &vk_compute_pass0_0_pipeline_layout_create_info, nullptr, &vk_compute_pass0_0_pipeline_layout) != VK_SUCCESS) {
-        std::cerr << "Failed to create compute pass 0.0 pipeline layout" << std::endl;
-        return 1;
-    }
-
-    /* load and compile shader */
-#ifndef EMBED_SHADER
-    std::vector<uint8_t> compute0_0_shader_spv(std::filesystem::file_size("cellular_automata.bin"));
-    {
-        std::ifstream in("cellular_automata.bin", std::ios::binary);
-        if (!in.good()) {
-            std::cerr << "Failed to open cellular_automata.bin" << std::endl;
-            return 1;
-        }
-
-        in.read(reinterpret_cast<char*>(&compute0_0_shader_spv[0]), compute0_0_shader_spv.size());
-        in.close();
-    }
-#else
-    std::vector<uint8_t> compute0_0_shader_spv = {
-        #include "cellular_automata.bin.h"
-    };
-#endif
-
-    VkShaderModuleCreateInfo vk_compute_pass0_0_shader_module_create_info = {
-        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = compute0_0_shader_spv.size(),
-        .pCode = reinterpret_cast<uint32_t const*>(compute0_0_shader_spv.data()),
-    };
-
-    VkShaderModule vk_compute_pass0_0_shader_module;
-    if (vkCreateShaderModule(vk_device, &vk_compute_pass0_0_shader_module_create_info, nullptr, &vk_compute_pass0_0_shader_module) != VK_SUCCESS) {
-        std::cerr << "Failed to create compute pass 0.0 shader module" << std::endl;
-        return 1;
-    }
-
-    /* setup compute pass 0.0 pipeline */
-    VkComputePipelineCreateInfo vk_compute_pass0_0_pipeline_create_info = {
-        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-        .stage = {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .stage = VK_SHADER_STAGE_COMPUTE_BIT,
-            .module = vk_compute_pass0_0_shader_module,
-            .pName = "cellular_automata",
-        },
-        .layout = vk_compute_pass0_0_pipeline_layout,
-    };
-
-    VkPipeline vk_compute_pass0_0_pipeline;
-    if (vkCreateComputePipelines(vk_device, nullptr, 1, &vk_compute_pass0_0_pipeline_create_info, nullptr, &vk_compute_pass0_0_pipeline) != VK_SUCCESS) {
-        std::cerr << "Failed to create compute pass 0.0 pipeline" << std::endl;
-        return 1;
-    }
-
-    /* setup descriptor sets */
-    VkDescriptorPoolSize vk_compute_pass0_0_descriptor_pool0_sizes[3] = {
-        {
-            .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .descriptorCount = 2,
-        },
-        {
-            .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .descriptorCount = 1,
-        },
-        {
-            .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-            .descriptorCount = 1,
-        },
-    };
-
-    VkDescriptorPoolCreateInfo vk_compute_pass0_0_descriptor_pool0_create_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .maxSets = 1,
-        .poolSizeCount = sizeof(vk_compute_pass0_0_descriptor_pool0_sizes) / sizeof(VkDescriptorPoolSize),
-        .pPoolSizes = &vk_compute_pass0_0_descriptor_pool0_sizes[0],
-    };
-    
-    VkDescriptorPool vk_compute_pass0_0_descriptor_pool0;
-    if (vkCreateDescriptorPool(vk_device, &vk_compute_pass0_0_descriptor_pool0_create_info, nullptr, &vk_compute_pass0_0_descriptor_pool0) != VK_SUCCESS) {
-        std::cerr << "Failed to create compute pass 0.0 descriptor pool 0" << std::endl;
-        return 1;
-    }
-
-    VkDescriptorSetAllocateInfo vk_compute_pass0_0_descriptor_pool0_set0_allocate_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .descriptorPool = vk_compute_pass0_0_descriptor_pool0,
-        .descriptorSetCount = 1,
-        .pSetLayouts = &vk_compute_pass0_0_descriptor_set_layout0,
-    };
-
-    VkDescriptorSet vk_compute_pass0_0_descriptor_pool0_set0;
-    if (vkAllocateDescriptorSets(vk_device, &vk_compute_pass0_0_descriptor_pool0_set0_allocate_info, &vk_compute_pass0_0_descriptor_pool0_set0) != VK_SUCCESS) {
-        std::cerr << "Failed to allocate compute pass 0.0 descriptor pool 0 set 0" << std::endl;
-        return 1;
-    }
-
-    /* setup synchronization primitives */
-    VkFenceCreateInfo vk_compute_pass0_0_finished_fence_create_info = {
-        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-        .flags = VK_FENCE_CREATE_SIGNALED_BIT,
-    };
-
-    VkFence vk_compute_pass0_0_finished_fence;
-    if (vkCreateFence(vk_device, &vk_compute_pass0_0_finished_fence_create_info, nullptr, &vk_compute_pass0_0_finished_fence) != VK_SUCCESS) {
-        std::cerr << "Failed to create compute pass 0.0 finished fence" << std::endl;
-        return 1;
-    }
-
     VkBuffer vk_cellular_automata_input_buffer = vk_cellular_automata_buffer1;
     VkBuffer vk_cellular_automata_output_buffer = vk_cellular_automata_buffer0;
 
@@ -1097,72 +1187,6 @@ int main(int argc, char** argv) {
         kvk::resource::MonoAllocationResident const& cellular_automata_input_buffer_resident = cellular_automata_heap.residents[{ .vk_buffer = vk_cellular_automata_input_buffer }];
         kvk::resource::MonoAllocationResident const& cellular_automata_output_buffer_resident = cellular_automata_heap.residents[{ .vk_buffer = vk_cellular_automata_output_buffer }];
 
-        /* write to descriptor sets */
-        VkDescriptorBufferInfo vk_compute_pass0_0_descriptor_pool0_set0_binding0_buffer_info = {
-            .buffer = vk_cellular_automata_input_buffer,
-            .offset = 0,
-            .range = cellular_automata_input_buffer_resident.vk_size,
-        };
-
-        VkDescriptorBufferInfo vk_compute_pass0_0_descriptor_pool0_set0_binding1_buffer_info = {
-            .buffer = vk_cellular_automata_output_buffer,
-            .offset = 0,
-            .range = cellular_automata_output_buffer_resident.vk_size,
-        };
-
-        VkDescriptorBufferInfo vk_compute_pass0_0_descriptor_pool0_set0_binding2_buffer_info = {
-            .buffer = vk_uniform_buffer,
-            .offset = 0,
-            .range = sizeof(Uniforms),
-        };
-
-        VkDescriptorImageInfo vk_compute_pass0_0_descriptor_pool0_set0_binding3_image_info = {
-            .sampler = nullptr,
-            .imageView = vk_cellular_automata_render_image_view,
-            .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-        };
-
-        VkWriteDescriptorSet vk_compute_pass0_0_descriptor_pool0_set0_writes[4] = {
-            {
-                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .dstSet = vk_compute_pass0_0_descriptor_pool0_set0,
-                .dstBinding = 0,
-                .dstArrayElement = 0,
-                .descriptorCount = 1,
-                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                .pBufferInfo = &vk_compute_pass0_0_descriptor_pool0_set0_binding0_buffer_info,
-            },
-            {
-                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .dstSet = vk_compute_pass0_0_descriptor_pool0_set0,
-                .dstBinding = 1,
-                .dstArrayElement = 0,
-                .descriptorCount = 1,
-                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                .pBufferInfo = &vk_compute_pass0_0_descriptor_pool0_set0_binding1_buffer_info,
-            },
-            {
-                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .dstSet = vk_compute_pass0_0_descriptor_pool0_set0,
-                .dstBinding = 2,
-                .dstArrayElement = 0,
-                .descriptorCount = 1,
-                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .pBufferInfo = &vk_compute_pass0_0_descriptor_pool0_set0_binding2_buffer_info,
-            },
-            {
-                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .dstSet = vk_compute_pass0_0_descriptor_pool0_set0,
-                .dstBinding = 3,
-                .dstArrayElement = 0,
-                .descriptorCount = 1,
-                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-                .pImageInfo = &vk_compute_pass0_0_descriptor_pool0_set0_binding3_image_info,
-            },
-        };
-
-        vkUpdateDescriptorSets(vk_device, sizeof(vk_compute_pass0_0_descriptor_pool0_set0_writes) / sizeof(VkWriteDescriptorSet), &vk_compute_pass0_0_descriptor_pool0_set0_writes[0], 0, nullptr);
-
         if (vkResetCommandPool(vk_device, vk_compute_queue0_command_pool0, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT) != VK_SUCCESS) {
             std::cerr << "Failed to reset compute queue 0 command pool 0" << std::endl;
             return 1;
@@ -1480,21 +1504,6 @@ int main(int argc, char** argv) {
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
-
-    /* cleaup synchronization primitives */
-    vkDestroyFence(vk_device, vk_compute_pass0_0_finished_fence, nullptr);
-
-    /* cleanup descriptor sets and pool */
-    vkDestroyDescriptorPool(vk_device, vk_compute_pass0_0_descriptor_pool0, nullptr);
-
-    /* cleanup compute pass 0.0 pipeline and shaders */
-    vkDestroyPipeline(vk_device, vk_compute_pass0_0_pipeline, nullptr);
-    vkDestroyShaderModule(vk_device, vk_compute_pass0_0_shader_module, nullptr);
-
-    /* cleanup compute pass 0.0 layouts */
-    vkDestroyPipelineLayout(vk_device, vk_compute_pass0_0_pipeline_layout, nullptr);
-    vkDestroyDescriptorSetLayout(vk_device, vk_compute_pass0_0_descriptor_set_layout0, nullptr);
-
     /* cleanup uniform resources and free heap */
     vkDestroyBuffer(vk_device, vk_uniform_buffer, nullptr);
     vkUnmapMemory(vk_device, uniform_heap.vk_heap_memory);
