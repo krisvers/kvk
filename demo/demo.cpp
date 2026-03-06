@@ -46,6 +46,36 @@ struct Uniforms {
     uint32_t visual_mode;
 };
 
+#include "imgui_internal.h"
+
+/* adapted from https://github.com/ocornut/imgui/issues/2644#issuecomment-507023896 */
+
+namespace ImGui {
+
+bool CheckBoxTristate(const char* label, int* v_tristate) {
+    bool ret;
+    if (*v_tristate == -1) {
+        ImGui::PushItemFlag(ImGuiItemFlags_ButtonRepeat, true);
+        bool b = false;
+        ret = ImGui::Checkbox(label, &b);
+        if (ret) {
+            *v_tristate = 1;
+        }
+
+        ImGui::PopItemFlag();
+    } else {
+        bool b = (*v_tristate != 0);
+        ret = ImGui::Checkbox(label, &b);
+        if (ret) {
+            *v_tristate = static_cast<int>(b);
+        }
+    }
+
+    return ret;
+}
+
+}
+
 int main(int argc, char** argv) {
     uint32_t width = CELLULAR_AUTOMATA_GRID_WIDTH;
     uint32_t height = CELLULAR_AUTOMATA_GRID_HEIGHT;
@@ -1022,6 +1052,23 @@ int main(int argc, char** argv) {
         ImGui::Text("Scroll up to increase large cursor size, down to decrease large cursor size");
         ImGui::Text("Space to pause simulation, right arrow to advance, left arrow to reverse");
         ImGui::Text("Press R to restart");
+        ImGui::End();
+
+        bool min = false;
+        bool max = true;
+
+        int live_count[9];
+        ImGui::Begin("Rule Set");
+        ImGui::Text("Behavior when neighbor count is:");
+        ImGui::CheckBoxTristate("0", &live_count[0]);
+        ImGui::CheckBoxTristate("1", &live_count[1]);
+        ImGui::CheckBoxTristate("2", &live_count[2]);
+        ImGui::CheckBoxTristate("3", &live_count[3]);
+        ImGui::CheckBoxTristate("4", &live_count[4]);
+        ImGui::CheckBoxTristate("5", &live_count[5]);
+        ImGui::CheckBoxTristate("6", &live_count[6]);
+        ImGui::CheckBoxTristate("7", &live_count[7]);
+        ImGui::CheckBoxTristate("8", &live_count[8]);
         ImGui::End();
 
         ImGui::Render();
