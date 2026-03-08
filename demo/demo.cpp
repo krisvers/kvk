@@ -54,10 +54,10 @@ public:
 
     virtual void set_swapchain_backbuffer(VkImage vk_backbuffer, VkImageView vk_backbuffer_view, VkExtent2D vk_extent, VkFormat vk_format) = 0;
 
-    virtual bool pre_transition(VkCommandBuffer vk_command_buffer) = 0;
-    virtual bool bind(VkCommandBuffer vk_command_buffer) = 0;
-    virtual bool execute(VkCommandBuffer vk_command_buffer) = 0;
-    virtual bool post_transition(VkCommandBuffer vk_command_buffer) = 0;
+    virtual bool pre_transition(Queue const& queue, VkCommandBuffer vk_command_buffer) = 0;
+    virtual bool bind(Queue const& queue, VkCommandBuffer vk_command_buffer) = 0;
+    virtual bool execute(Queue const& queue, VkCommandBuffer vk_command_buffer) = 0;
+    virtual bool post_transition(Queue const& queue, VkCommandBuffer vk_command_buffer) = 0;
 
     virtual VkSemaphore finished_semaphore() = 0;
     virtual VkFence finished_fence() = 0;
@@ -73,10 +73,14 @@ private:
     VkPipeline _compute_pipeline;
     VkFence _finished_fence;
 
-    VkImage _backbuffer;
-    VkImageView _backbuffer_view;
-    VkExtent2D _backbuffer_extent;
-    VkFormat _backbuffer_format;
+    kvk::resource::MonoAllocationResident _input_buffer_resident;
+    kvk::resource::MonoAllocationResident _output_buffer_resident;
+    kvk::resource::MonoAllocationResident _uniform_buffer_resident;
+    VkImage _render_image;
+    VkImageView _render_image_view;
+
+    uint32_t _width;
+    uint32_t _height;
 
 public:
     ComputePass0_0(VkDevice vk_device) : _device(vk_device) {
@@ -231,35 +235,41 @@ public:
         vkDestroyDescriptorSetLayout(_device, _set_layout, nullptr);
     }
 
-    void set_swapchain_backbuffer(VkImage vk_backbuffer, VkImageView vk_backbuffer_view, VkExtent2D vk_extent, VkFormat vk_format) override {
-        _backbuffer = vk_backbuffer;
-        _backbuffer_view = vk_backbuffer_view;
-        _backbuffer_extent = vk_extent;
-        _backbuffer_format = vk_format;
+    void set_swapchain_backbuffer(VkImage vk_backbuffer, VkImageView vk_backbuffer_view, VkExtent2D vk_extent, VkFormat vk_format) override {}
+
+    void set_resources(kvk::resource::MonoAllocationResident const& input_buffer_resident, kvk::resource::MonoAllocationResident const& output_buffer_resident, kvk::resource::MonoAllocationResident const& uniform_buffer_resident, VkImage vk_render_image, VkImageView vk_render_image_view, uint32_t width, uint32_t height) {
+        _input_buffer_resident = input_buffer_resident;
+        _output_buffer_resident = output_buffer_resident;
+        _uniform_buffer_resident = uniform_buffer_resident;
+        _render_image = vk_render_image;
+        _render_image_view = vk_render_image_view;
+
+        _width = width;
+        _height = height;
     }
 
-    bool update_descriptor_sets(kvk::resource::MonoAllocationResident const& input_buffer_resident, kvk::resource::MonoAllocationResident const& output_buffer_resident, kvk::resource::MonoAllocationResident const& uniform_buffer_resident, VkImageView vk_render_image_view) {
+    bool update_descriptor_sets() {
         VkDescriptorBufferInfo binding0_buffer_info = {
-            .buffer = input_buffer_resident.id.vk_buffer,
+            .buffer = _input_buffer_resident.id.vk_buffer,
             .offset = 0,
-            .range = input_buffer_resident.vk_size,
+            .range = _input_buffer_resident.vk_size,
         };
 
         VkDescriptorBufferInfo binding1_buffer_info = {
-            .buffer = output_buffer_resident.id.vk_buffer,
+            .buffer = _output_buffer_resident.id.vk_buffer,
             .offset = 0,
-            .range = output_buffer_resident.vk_size,
+            .range = _output_buffer_resident.vk_size,
         };
 
         VkDescriptorBufferInfo binding2_buffer_info = {
-            .buffer = uniform_buffer_resident.id.vk_buffer,
+            .buffer = _uniform_buffer_resident.id.vk_buffer,
             .offset = 0,
             .range = sizeof(Uniforms),
         };
 
         VkDescriptorImageInfo binding3_image_info = {
             .sampler = nullptr,
-            .imageView = vk_render_image_view,
+            .imageView = _render_image_view,
             .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
         };
 
@@ -306,8 +316,92 @@ public:
         return true;
     }
 
-    bool pre_transition(VkCommandBuffer vk_command_buffer) override {
-        
+    bool pre_transition(Queue const& queue, VkCommandBuffer vk_command_buffer) override {
+        VkBufferMemoryBarrier initial_transition_buffer_memory_barriers[3] = {
+            {
+                .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+                .srcAccessMask = 0,
+                .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+                .srcQueueFamilyIndex = queue.family_index,
+                .dstQueueFamilyIndex = queue.family_index,
+                .buffer = _input_buffer_resident.id.vk_buffer,
+                .offset = 0,
+                .size = _input_buffer_resident.vk_size,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+                .srcAccessMask = 0,
+                .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                .srcQueueFamilyIndex = queue.family_index,
+                .dstQueueFamilyIndex = queue.family_index,
+                .buffer = _output_buffer_resident.id.vk_buffer,
+                .offset = 0,
+                .size = _output_buffer_resident.vk_size,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+                .srcAccessMask = 0,
+                .dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT,
+                .srcQueueFamilyIndex = queue.family_index,
+                .dstQueueFamilyIndex = queue.family_index,
+                .buffer = _uniform_buffer_resident.id.vk_buffer,
+                .offset = 0,
+                .size = sizeof(Uniforms),
+            },
+        };
+
+        VkImageMemoryBarrier initial_transition_image_memory_barriers[1] = {
+            {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                .srcAccessMask = 0,
+                .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+                .srcQueueFamilyIndex = queue.family_index,
+                .dstQueueFamilyIndex = queue.family_index,
+                .image = _render_image,
+                .subresourceRange = {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+            },
+        };
+
+        vkCmdPipelineBarrier(vk_command_buffer,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            0, 0, nullptr,
+            sizeof(initial_transition_buffer_memory_barriers) / sizeof(VkBufferMemoryBarrier),
+            &initial_transition_buffer_memory_barriers[0],
+            sizeof(initial_transition_image_memory_barriers) / sizeof(VkImageMemoryBarrier),
+            &initial_transition_image_memory_barriers[0]
+        );
+
+        return true;
+    }
+
+    bool bind(Queue const& queue, VkCommandBuffer vk_command_buffer) override {
+        vkCmdBindPipeline(vk_command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, _compute_pipeline);
+        vkCmdBindDescriptorSets(vk_command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, _compute_pipeline_layout, 0, 1, &_descriptor_set, 0, nullptr);
+
+        return true;
+    }
+
+    bool execute(Queue const& queue, VkCommandBuffer vk_command_buffer) override {
+        vkCmdDispatch(vk_command_buffer, _width / 8, _height / 8, 1);
+        return true;
+    }
+
+    bool post_transition(Queue const& queue, VkCommandBuffer vk_command_buffer) override {}
+
+    VkFence finished_fence() override {
+        return _finished_fence;
+    }
+
+    VkSemaphore finished_semaphore() override {
+        return nullptr;
     }
 };
 
@@ -923,6 +1017,8 @@ int main(int argc, char** argv) {
     PFN_vkCmdBeginRenderingKHR vkCmdBeginRenderingKHR = reinterpret_cast<PFN_vkCmdBeginRenderingKHR>(vkGetInstanceProcAddr(vk_instance, "vkCmdBeginRenderingKHR"));
     PFN_vkCmdEndRenderingKHR vkCmdEndRenderingKHR = reinterpret_cast<PFN_vkCmdEndRenderingKHR>(vkGetInstanceProcAddr(vk_instance, "vkCmdEndRenderingKHR"));
 
+    ComputePass0_0 compute_pass0_0 = ComputePass0_0(vk_device);
+
     SDL_Event sdl_event;
     int live_count[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
@@ -1102,7 +1198,8 @@ int main(int argc, char** argv) {
         p_uniforms->height = height;
 
         if (!failed_swapchain) {
-            if (vkWaitForFences(vk_device, 1, &vk_compute_pass0_0_finished_fence, false, std::numeric_limits<uint64_t>::max()) != VK_SUCCESS) {
+            VkFence compute_pass0_0_finished_fence = compute_pass0_0.finished_fence();
+            if (vkWaitForFences(vk_device, 1, &compute_pass0_0_finished_fence, false, std::numeric_limits<uint64_t>::max()) != VK_SUCCESS) {
                 std::cerr << "Failed to wait for compute pass 0.0 finished fence" << std::endl;
                 return 1;
             }
@@ -1220,74 +1317,6 @@ int main(int argc, char** argv) {
             std::cerr << "Failed to begin compute queue 0 command pool 0 command buffer 0" << std::endl;
             return 1;
         }
-
-        /* transition all resources */
-        VkBufferMemoryBarrier vk_compute_pass0_0_initial_transition_buffer_memory_barriers[3] = {
-            {
-                .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-                .srcAccessMask = 0,
-                .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-                .srcQueueFamilyIndex = queues.compute0_0.family_index,
-                .dstQueueFamilyIndex = queues.compute0_0.family_index,
-                .buffer = vk_cellular_automata_input_buffer,
-                .offset = 0,
-                .size = cellular_automata_input_buffer_resident.vk_size,
-            },
-            {
-                .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-                .srcAccessMask = 0,
-                .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-                .srcQueueFamilyIndex = queues.compute0_0.family_index,
-                .dstQueueFamilyIndex = queues.compute0_0.family_index,
-                .buffer = vk_cellular_automata_output_buffer,
-                .offset = 0,
-                .size = cellular_automata_output_buffer_resident.vk_size,
-            },
-            {
-                .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-                .srcAccessMask = 0,
-                .dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT,
-                .srcQueueFamilyIndex = queues.compute0_0.family_index,
-                .dstQueueFamilyIndex = queues.compute0_0.family_index,
-                .buffer = vk_uniform_buffer,
-                .offset = 0,
-                .size = sizeof(Uniforms),
-            },
-        };
-
-        VkImageMemoryBarrier vk_compute_pass0_0_initial_transition_image_memory_barriers[1] = {
-            {
-                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-                .srcAccessMask = 0,
-                .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                .newLayout = VK_IMAGE_LAYOUT_GENERAL,
-                .srcQueueFamilyIndex = queues.compute0_0.family_index,
-                .dstQueueFamilyIndex = queues.compute0_0.family_index,
-                .image = vk_cellular_automata_render_image,
-                .subresourceRange = {
-                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                    .baseMipLevel = 0,
-                    .levelCount = 1,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1,
-                },
-            },
-        };
-
-        vkCmdPipelineBarrier(vk_compute_queue0_command_pool0_command_buffer0,
-            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-            0, 0, nullptr,
-            sizeof(vk_compute_pass0_0_initial_transition_buffer_memory_barriers) / sizeof(VkBufferMemoryBarrier),
-            &vk_compute_pass0_0_initial_transition_buffer_memory_barriers[0],
-            sizeof(vk_compute_pass0_0_initial_transition_image_memory_barriers) / sizeof(VkImageMemoryBarrier),
-            &vk_compute_pass0_0_initial_transition_image_memory_barriers[0]
-        );
-
-        vkCmdBindPipeline(vk_compute_queue0_command_pool0_command_buffer0, VK_PIPELINE_BIND_POINT_COMPUTE, vk_compute_pass0_0_pipeline);
-        vkCmdBindDescriptorSets(vk_compute_queue0_command_pool0_command_buffer0, VK_PIPELINE_BIND_POINT_COMPUTE, vk_compute_pass0_0_pipeline_layout, 0, 1, &vk_compute_pass0_0_descriptor_pool0_set0, 0, nullptr);
-        vkCmdDispatch(vk_compute_queue0_command_pool0_command_buffer0, width / 8, height / 8, 1);
-
         VkImageMemoryBarrier vk_compute_pass0_0_prepare_for_blit_image_memory_barriers[2] = {
             {
                 .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
