@@ -54,10 +54,12 @@ public:
 
     virtual void set_swapchain_backbuffer(VkImage vk_backbuffer, VkImageView vk_backbuffer_view, VkExtent2D vk_extent, VkFormat vk_format) = 0;
 
+    virtual bool prepare(Queue const& queue, VkCommandBuffer vk_command_buffer) = 0;
     virtual bool pre_transition(Queue const& queue, VkCommandBuffer vk_command_buffer) = 0;
     virtual bool bind(Queue const& queue, VkCommandBuffer vk_command_buffer) = 0;
     virtual bool execute(Queue const& queue, VkCommandBuffer vk_command_buffer) = 0;
     virtual bool post_transition(Queue const& queue, VkCommandBuffer vk_command_buffer) = 0;
+    virtual bool cleanup(Queue const& queue, VkCommandBuffer vk_command_buffer) = 0;
 
     virtual VkSemaphore finished_semaphore() = 0;
     virtual VkFence finished_fence() = 0;
@@ -316,6 +318,10 @@ public:
         return true;
     }
 
+    bool prepare(Queue const& queue, VkCommandBuffer vk_command_buffer) override {
+        return true;
+    }
+
     bool pre_transition(Queue const& queue, VkCommandBuffer vk_command_buffer) override {
         VkBufferMemoryBarrier initial_transition_buffer_memory_barriers[3] = {
             {
@@ -394,7 +400,13 @@ public:
         return true;
     }
 
-    bool post_transition(Queue const& queue, VkCommandBuffer vk_command_buffer) override {}
+    bool post_transition(Queue const& queue, VkCommandBuffer vk_command_buffer) override {
+        return true;
+    }
+
+    bool cleanup(Queue const& queue, VkCommandBuffer vk_command_buffer) override {
+        return true;
+    }
 
     VkFence finished_fence() override {
         return _finished_fence;
@@ -1204,7 +1216,7 @@ int main(int argc, char** argv) {
                 return 1;
             }
 
-            if (vkResetFences(vk_device, 1, &vk_compute_pass0_0_finished_fence) != VK_SUCCESS) {
+            if (vkResetFences(vk_device, 1, &compute_pass0_0_finished_fence) != VK_SUCCESS) {
                 std::cerr << "Failed to reset compute pass 0.0 finished fence" << std::endl;
                 return 1;
             }
@@ -1304,6 +1316,18 @@ int main(int argc, char** argv) {
         kvk::resource::MonoAllocationResident const& cellular_automata_input_buffer_resident = cellular_automata_heap.residents[{ .vk_buffer = vk_cellular_automata_input_buffer }];
         kvk::resource::MonoAllocationResident const& cellular_automata_output_buffer_resident = cellular_automata_heap.residents[{ .vk_buffer = vk_cellular_automata_output_buffer }];
 
+        compute_pass0_0.set_resources(cellular_automata_input_buffer_resident, cellular_automata_output_buffer_resident, uniform_buffer_resident, vk_cellular_automata_render_image, vk_cellular_automata_render_image_view, width, height);
+        if (render) {
+            compute_pass0_0.set_swapchain_backbuffer(vk_swapchain_backbuffers[vk_swapchain_backbuffer_index], vk_swapchain_backbuffer_views[vk_swapchain_backbuffer_index], swapchain_returns.vk_current_extent, swapchain_preference.vk_surface_format.format);
+        } else {
+            compute_pass0_0.set_swapchain_backbuffer(nullptr, nullptr, swapchain_returns.vk_current_extent, swapchain_preference.vk_surface_format.format);
+        }
+
+        if (!compute_pass0_0.update_descriptor_sets()) {
+            std::cerr << "Failed to update descriptor sets for compute pass 0.0" << std::endl;
+            return 1;
+        }
+
         if (vkResetCommandPool(vk_device, vk_compute_queue0_command_pool0, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT) != VK_SUCCESS) {
             std::cerr << "Failed to reset compute queue 0 command pool 0" << std::endl;
             return 1;
@@ -1317,6 +1341,37 @@ int main(int argc, char** argv) {
             std::cerr << "Failed to begin compute queue 0 command pool 0 command buffer 0" << std::endl;
             return 1;
         }
+
+        if (!compute_pass0_0.prepare(queues.compute0_0, vk_compute_queue0_command_pool0_command_buffer0)) {
+            std::cerr << "Failed to prepare for compute pass 0.0" << std::endl;
+            return 1;
+        }
+
+        if (!compute_pass0_0.pre_transition(queues.compute0_0, vk_compute_queue0_command_pool0_command_buffer0)) {
+            std::cerr << "Failed to perform pre-pass resource transitions for compute pass 0.0" << std::endl;
+            return 1;
+        }
+
+        if (!compute_pass0_0.bind(queues.compute0_0, vk_compute_queue0_command_pool0_command_buffer0)) {
+            std::cerr << "Failed to bind resources for compute pass 0.0" << std::endl;
+            return 1;
+        }
+
+        if (!compute_pass0_0.execute(queues.compute0_0, vk_compute_queue0_command_pool0_command_buffer0)) {
+            std::cerr << "Failed to execute compute pass 0.0" << std::endl;
+            return 1;
+        }
+
+        if (!compute_pass0_0.post_transition(queues.compute0_0, vk_compute_queue0_command_pool0_command_buffer0)) {
+            std::cerr << "Failed to perform post-pass resource transitions for compute pass 0.0" << std::endl;
+            return 1;
+        }
+
+        if (!compute_pass0_0.cleanup(queues.compute0_0, vk_compute_queue0_command_pool0_command_buffer0)) {
+            std::cerr << "Failed to cleanup compute pass 0.0" << std::endl;
+            return 1;
+        }
+
         VkImageMemoryBarrier vk_compute_pass0_0_prepare_for_blit_image_memory_barriers[2] = {
             {
                 .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -1521,7 +1576,7 @@ int main(int argc, char** argv) {
             .pSignalSemaphores = (render) ? &vk_swapchain_image_finished_semaphores[vk_swapchain_backbuffer_index] : nullptr,
         };
 
-        if (vkQueueSubmit(queues.compute0_0.vk_queue, 1, &vk_compute_queue0_submit_info, vk_compute_pass0_0_finished_fence) != VK_SUCCESS) {
+        if (vkQueueSubmit(queues.compute0_0.vk_queue, 1, &vk_compute_queue0_submit_info, compute_pass0_0.finished_fence()) != VK_SUCCESS) {
             std::cerr << "Failed to submit compute pass 0.0 work to compute queue 0.0" << std::endl;
             return 1;
         }
@@ -1553,6 +1608,7 @@ int main(int argc, char** argv) {
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
+
     /* cleanup uniform resources and free heap */
     vkDestroyBuffer(vk_device, vk_uniform_buffer, nullptr);
     vkUnmapMemory(vk_device, uniform_heap.vk_heap_memory);
