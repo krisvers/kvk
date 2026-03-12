@@ -1029,44 +1029,46 @@ int main(int argc, char** argv) {
     PFN_vkCmdBeginRenderingKHR vkCmdBeginRenderingKHR = reinterpret_cast<PFN_vkCmdBeginRenderingKHR>(vkGetInstanceProcAddr(vk_instance, "vkCmdBeginRenderingKHR"));
     PFN_vkCmdEndRenderingKHR vkCmdEndRenderingKHR = reinterpret_cast<PFN_vkCmdEndRenderingKHR>(vkGetInstanceProcAddr(vk_instance, "vkCmdEndRenderingKHR"));
 
-    ComputePass0_0 compute_pass0_0 = ComputePass0_0(vk_device);
+    {
+        ComputePass0_0 compute_pass0_0 = ComputePass0_0(vk_device);
 
-    SDL_Event sdl_event;
-    int live_count[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+        SDL_Event sdl_event;
+        int live_count[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
-    p_uniforms->visual_mode = 8;
-    p_uniforms->v = 0x01000080;
-    while (running) {
-        bool compute = false;
-        bool render = false;
-        bool advance = false;
-        bool reverse = false;
-        frames_per_tick = std::max(std::floor(frames_per_tick * 5.0f) / 5.0f, 0.2f);
+        p_uniforms->visual_mode = 8;
+        p_uniforms->v = 0x01000080;
+        while (running) {
+            bool compute = false;
+            bool render = false;
+            bool advance = false;
+            bool reverse = false;
+            frames_per_tick = std::max(std::floor(frames_per_tick * 5.0f) / 5.0f, 0.2f);
 
-        if (frames_per_tick >= 1.0f) {
-            ++frame;
-            render = true;
-            if (frame % static_cast<uint32_t>(frames_per_tick) == 0) {
-                compute = true;
-                ++tick;
-            }
-        } else {
-            ++tick;
-            compute = true;
-            if (tick % std::max(static_cast<uint32_t>(1.0f / frames_per_tick), 0u) == 0) {
-                render = true;
+            if (frames_per_tick >= 1.0f) {
                 ++frame;
+                render = true;
+                if (frame % static_cast<uint32_t>(frames_per_tick) == 0) {
+                    compute = true;
+                    ++tick;
+                }
             }
-        }
+            else {
+                ++tick;
+                compute = true;
+                if (tick % std::max(static_cast<uint32_t>(1.0f / frames_per_tick), 0u) == 0) {
+                    render = true;
+                    ++frame;
+                }
+            }
 
-        if (frame == 1 || tick == 1) {
-            p_uniforms->v = 0x01000000;
-        }
+            if (frame == 1 || tick == 1) {
+                p_uniforms->v = 0x01000000;
+            }
 
-        while (SDL_PollEvent(&sdl_event)) {
-            ImGui_ImplSDL3_ProcessEvent(&sdl_event);
+            while (SDL_PollEvent(&sdl_event)) {
+                ImGui_ImplSDL3_ProcessEvent(&sdl_event);
 
-            switch (sdl_event.type) {
+                switch (sdl_event.type) {
                 case SDL_EVENT_QUIT:
                     running = false;
                     break;
@@ -1086,14 +1088,17 @@ int main(int argc, char** argv) {
                         left_click = sdl_event.button.down;
                         if (left_click) {
                             p_uniforms->v = (p_uniforms->v & ~0x1f) | 0x18;
-                        } else {
+                        }
+                        else {
                             p_uniforms->v &= ~0x1f;
                         }
-                    } else if (sdl_event.button.button == SDL_BUTTON_RIGHT) {
+                    }
+                    else if (sdl_event.button.button == SDL_BUTTON_RIGHT) {
                         right_click = sdl_event.button.down;
                         if (right_click) {
                             p_uniforms->v = (p_uniforms->v & ~0x100) | 0x100;
-                        } else {
+                        }
+                        else {
                             p_uniforms->v &= ~0x100;
                         }
                     }
@@ -1104,61 +1109,63 @@ int main(int argc, char** argv) {
                     }
 
                     switch (sdl_event.key.key) {
-                        case SDLK_R:
-                            p_uniforms->v = (p_uniforms->v & ~0x80) | 0x80;
-                            break;
-                        case SDLK_SPACE:
-                            if (!sdl_event.key.repeat) {
-                                paused = !paused;
-                                p_uniforms->v = (p_uniforms->v & ~0x400) | (!paused ? 0x400 : 0x00);
-                            }
-                            break;
-                        case SDLK_0:
-                        case SDLK_1:
-                        case SDLK_2:
-                        case SDLK_3:
-                        case SDLK_4:
-                        case SDLK_5:
-                        case SDLK_6:
-                        case SDLK_7:
-                        case SDLK_8:
-                        case SDLK_9:
-                            if (!sdl_event.key.repeat) {
-                                p_uniforms->visual_mode = sdl_event.key.key - SDLK_0;
-                            }
-                            break;
-                        case SDLK_LEFT:
-                            reverse = true;
-                            compute = true;
-                            break;
-                        case SDLK_RIGHT:
-                            advance = true;
-                            compute = true;
-                            break;
-                        case SDLK_UP:
+                    case SDLK_R:
+                        p_uniforms->v = (p_uniforms->v & ~0x80) | 0x80;
+                        break;
+                    case SDLK_SPACE:
+                        if (!sdl_event.key.repeat) {
+                            paused = !paused;
+                            p_uniforms->v = (p_uniforms->v & ~0x400) | (!paused ? 0x400 : 0x00);
+                        }
+                        break;
+                    case SDLK_0:
+                    case SDLK_1:
+                    case SDLK_2:
+                    case SDLK_3:
+                    case SDLK_4:
+                    case SDLK_5:
+                    case SDLK_6:
+                    case SDLK_7:
+                    case SDLK_8:
+                    case SDLK_9:
+                        if (!sdl_event.key.repeat) {
+                            p_uniforms->visual_mode = sdl_event.key.key - SDLK_0;
+                        }
+                        break;
+                    case SDLK_LEFT:
+                        reverse = true;
+                        compute = true;
+                        break;
+                    case SDLK_RIGHT:
+                        advance = true;
+                        compute = true;
+                        break;
+                    case SDLK_UP:
+                        if (frames_per_tick < 1.0f) {
+                            frames_per_tick -= 0.2f;
+                        }
+                        else {
+                            frames_per_tick -= 1.0f;
+                        }
+                        break;
+                    case SDLK_DOWN:
+                        if (!sdl_event.key.repeat) {
                             if (frames_per_tick < 1.0f) {
-                                frames_per_tick -= 0.2f;
-                            } else {
-                                frames_per_tick -= 1.0f;
+                                frames_per_tick += 0.2f;
                             }
-                            break;
-                        case SDLK_DOWN:
-                            if (!sdl_event.key.repeat) {
-                                if (frames_per_tick < 1.0f) {
-                                    frames_per_tick += 0.2f;
-                                } else {
-                                    frames_per_tick += 1.0f;
-                                }
+                            else {
+                                frames_per_tick += 1.0f;
                             }
-                            break;
-                        case SDLK_EQUALS:
-                            zoom *= 1.15f;
-                            break;
-                        case SDLK_MINUS:
-                            zoom /= 1.15f;
-                            break;
-                        default:
-                            break;
+                        }
+                        break;
+                    case SDLK_EQUALS:
+                        zoom *= 1.15f;
+                        break;
+                    case SDLK_MINUS:
+                        zoom /= 1.15f;
+                        break;
+                    default:
+                        break;
                     }
                     break;
                 case SDL_EVENT_KEY_UP:
@@ -1167,11 +1174,11 @@ int main(int argc, char** argv) {
                     }
 
                     switch (sdl_event.key.key) {
-                        case SDLK_R:
-                            p_uniforms->v &= ~0x80;
-                            break;
-                        default:
-                            break;
+                    case SDLK_R:
+                        p_uniforms->v &= ~0x80;
+                        break;
+                    default:
+                        break;
                     }
                     break;
                 case SDL_EVENT_MOUSE_MOTION:
@@ -1190,420 +1197,420 @@ int main(int argc, char** argv) {
                 case SDL_EVENT_WINDOW_MAXIMIZED:
                     minimized = false;
                     break;
+                }
+
+                if (!running) {
+                    break;
+                }
             }
 
-            if (!running) {
-                break;
+            if (minimized) {
+                render = false;
             }
-        }
 
-        if (minimized) {
-            render = false;
-        }
+            p_uniforms->v = (p_uniforms->v & ~0x23f) | ((!(advance || reverse) && (paused || !compute)) ? 0x20 : 0x00) | (reverse ? 0x200 : 0x000) | (left_click ? 0x58 : 0x00) | (right_click ? 0x100 : 0x00);
+            p_uniforms->x = mouse_x * static_cast<float>(width) / window_width;
+            p_uniforms->y = mouse_y * static_cast<float>(height) / window_height;
+            p_uniforms->tick = game_tick;
+            p_uniforms->bytes_per_cell = CELLULAR_AUTOMATA_BYTES_PER_CELL;
+            p_uniforms->width = width;
+            p_uniforms->height = height;
 
-        p_uniforms->v = (p_uniforms->v & ~0x23f) | ((!(advance || reverse) && (paused || !compute)) ? 0x20 : 0x00) | (reverse ? 0x200 : 0x000) | (left_click ? 0x58 : 0x00) | (right_click ? 0x100 : 0x00);
-        p_uniforms->x = mouse_x * static_cast<float>(width) / window_width;
-        p_uniforms->y = mouse_y * static_cast<float>(height) / window_height;
-        p_uniforms->tick = game_tick;
-        p_uniforms->bytes_per_cell = CELLULAR_AUTOMATA_BYTES_PER_CELL;
-        p_uniforms->width = width;
-        p_uniforms->height = height;
+            if (!failed_swapchain) {
+                VkFence compute_pass0_0_finished_fence = compute_pass0_0.finished_fence();
+                if (vkWaitForFences(vk_device, 1, &compute_pass0_0_finished_fence, false, std::numeric_limits<uint64_t>::max()) != VK_SUCCESS) {
+                    std::cerr << "Failed to wait for compute pass 0.0 finished fence" << std::endl;
+                    return 1;
+                }
 
-        if (!failed_swapchain) {
-            VkFence compute_pass0_0_finished_fence = compute_pass0_0.finished_fence();
-            if (vkWaitForFences(vk_device, 1, &compute_pass0_0_finished_fence, false, std::numeric_limits<uint64_t>::max()) != VK_SUCCESS) {
-                std::cerr << "Failed to wait for compute pass 0.0 finished fence" << std::endl;
+                if (vkResetFences(vk_device, 1, &compute_pass0_0_finished_fence) != VK_SUCCESS) {
+                    std::cerr << "Failed to reset compute pass 0.0 finished fence" << std::endl;
+                    return 1;
+                }
+            }
+
+            failed_swapchain = false;
+
+            /* acquire swapchain image */
+            uint32_t vk_swapchain_backbuffer_index = 0;
+            if (render) {
+                if (vkAcquireNextImageKHR(vk_device, vk_swapchain, std::numeric_limits<uint64_t>::max(), vk_swapchain_image_acquisition_semaphore, nullptr, &vk_swapchain_backbuffer_index) != VK_SUCCESS) {
+                    std::cerr << "Failed to acquire swapchain image index" << std::endl;
+                    failed_swapchain = true;
+                    continue;
+                }
+            }
+
+            ImGui_ImplVulkan_NewFrame();
+            ImGui_ImplSDL3_NewFrame();
+            ImGui::NewFrame();
+
+            ImGui::Begin("Instruction");
+            ImGui::Text("To play, draw on the cells using the mouse");
+            ImGui::Text("Left click to draw, right click to erase");
+            ImGui::Text("Scroll up to increase cursor size, down to decrease cursor size");
+            ImGui::Text("Space to pause simulation, right arrow to advance, left arrow to reverse");
+            ImGui::Text("Press R to restart");
+            ImGui::Text("");
+            ImGui::Text("Play around with the rule set");
+            ImGui::Text("If you get lost, you can always use a preset");
+            ImGui::End();
+
+            ImGui::Begin("Rule Set");
+            ImGui::Text("Behavior when certain neighbor count:");
+            ImGui::Text("(Note):");
+            ImGui::Text(" -1 means cell always dies");
+            ImGui::Text("  0 means cell continues with previous state");
+            ImGui::Text("  1 means cell always lives");
+
+            if (ImGui::SmallButton("Load Preset: \"Conway's Game of Life\"")) {
+                live_count[0] = -1;
+                live_count[1] = -1;
+                live_count[2] = 0;
+                live_count[3] = 1;
+                live_count[4] = -1;
+                live_count[5] = -1;
+                live_count[6] = -1;
+                live_count[7] = -1;
+                live_count[8] = -1;
+            }
+
+            if (ImGui::SmallButton("Load Preset: \"High Life\"")) {
+                live_count[0] = -1;
+                live_count[1] = -1;
+                live_count[2] = 0;
+                live_count[3] = 1;
+                live_count[4] = -1;
+                live_count[5] = -1;
+                live_count[6] = 1;
+                live_count[7] = -1;
+                live_count[8] = -1;
+            }
+
+            ImGui::SliderInt("0 neighbors", &live_count[0], -1, 1);
+            ImGui::SliderInt("1 neighbors", &live_count[1], -1, 1);
+            ImGui::SliderInt("2 neighbors", &live_count[2], -1, 1);
+            ImGui::SliderInt("3 neighbors", &live_count[3], -1, 1);
+            ImGui::SliderInt("4 neighbors", &live_count[4], -1, 1);
+            ImGui::SliderInt("5 neighbors", &live_count[5], -1, 1);
+            ImGui::SliderInt("6 neighbors", &live_count[6], -1, 1);
+            ImGui::SliderInt("7 neighbors", &live_count[7], -1, 1);
+            ImGui::SliderInt("8 neighbors", &live_count[8], -1, 1);
+            ImGui::End();
+
+            p_uniforms->conditions =
+                ((live_count[0] + 1)) |
+                ((live_count[1] + 1) << 2) |
+                ((live_count[2] + 1) << 4) |
+                ((live_count[3] + 1) << 6) |
+                ((live_count[4] + 1) << 8) |
+                ((live_count[5] + 1) << 10) |
+                ((live_count[6] + 1) << 12) |
+                ((live_count[7] + 1) << 14) |
+                ((live_count[8] + 1) << 16);
+
+            ImGui::Render();
+
+            /* prepare for compute pass 0.0 */
+            {
+                VkBuffer vk_tmp_buffer = vk_cellular_automata_input_buffer;
+                vk_cellular_automata_input_buffer = vk_cellular_automata_output_buffer;
+                vk_cellular_automata_output_buffer = vk_tmp_buffer;
+            }
+
+            kvk::resource::MonoAllocationResident const& cellular_automata_input_buffer_resident = cellular_automata_heap.residents[{.vk_buffer = vk_cellular_automata_input_buffer }];
+            kvk::resource::MonoAllocationResident const& cellular_automata_output_buffer_resident = cellular_automata_heap.residents[{.vk_buffer = vk_cellular_automata_output_buffer }];
+
+            compute_pass0_0.set_resources(cellular_automata_input_buffer_resident, cellular_automata_output_buffer_resident, uniform_buffer_resident, vk_cellular_automata_render_image, vk_cellular_automata_render_image_view, width, height);
+            if (render) {
+                compute_pass0_0.set_swapchain_backbuffer(vk_swapchain_backbuffers[vk_swapchain_backbuffer_index], vk_swapchain_backbuffer_views[vk_swapchain_backbuffer_index], swapchain_returns.vk_current_extent, swapchain_preference.vk_surface_format.format);
+            }
+            else {
+                compute_pass0_0.set_swapchain_backbuffer(nullptr, nullptr, swapchain_returns.vk_current_extent, swapchain_preference.vk_surface_format.format);
+            }
+
+            if (!compute_pass0_0.update_descriptor_sets()) {
+                std::cerr << "Failed to update descriptor sets for compute pass 0.0" << std::endl;
                 return 1;
             }
 
-            if (vkResetFences(vk_device, 1, &compute_pass0_0_finished_fence) != VK_SUCCESS) {
-                std::cerr << "Failed to reset compute pass 0.0 finished fence" << std::endl;
+            if (vkResetCommandPool(vk_device, vk_compute_queue0_command_pool0, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT) != VK_SUCCESS) {
+                std::cerr << "Failed to reset compute queue 0 command pool 0" << std::endl;
                 return 1;
             }
-        }
 
-        failed_swapchain = false;
+            VkCommandBufferBeginInfo vk_compute_queue0_command_pool0_command_buffer0_begin_info = {
+                .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            };
 
-        /* acquire swapchain image */
-        uint32_t vk_swapchain_backbuffer_index = 0;
-        if (render) {
-            if (vkAcquireNextImageKHR(vk_device, vk_swapchain, std::numeric_limits<uint64_t>::max(), vk_swapchain_image_acquisition_semaphore, nullptr, &vk_swapchain_backbuffer_index) != VK_SUCCESS) {
-                std::cerr << "Failed to acquire swapchain image index" << std::endl;
-                failed_swapchain = true;
-                continue;
+            if (vkBeginCommandBuffer(vk_compute_queue0_command_pool0_command_buffer0, &vk_compute_queue0_command_pool0_command_buffer0_begin_info) != VK_SUCCESS) {
+                std::cerr << "Failed to begin compute queue 0 command pool 0 command buffer 0" << std::endl;
+                return 1;
             }
-        }
 
-        ImGui_ImplVulkan_NewFrame();
-        ImGui_ImplSDL3_NewFrame();
-        ImGui::NewFrame();
+            if (!compute_pass0_0.prepare(queues.compute0_0, vk_compute_queue0_command_pool0_command_buffer0)) {
+                std::cerr << "Failed to prepare for compute pass 0.0" << std::endl;
+                return 1;
+            }
 
-        ImGui::Begin("Instruction");
-        ImGui::Text("To play, draw on the cells using the mouse");
-        ImGui::Text("Left click to draw, right click to erase");
-        ImGui::Text("Scroll up to increase cursor size, down to decrease cursor size");
-        ImGui::Text("Space to pause simulation, right arrow to advance, left arrow to reverse");
-        ImGui::Text("Press R to restart");
-        ImGui::Text("");
-        ImGui::Text("Play around with the rule set");
-        ImGui::Text("If you get lost, you can always use a preset");
-        ImGui::End();
+            if (!compute_pass0_0.pre_transition(queues.compute0_0, vk_compute_queue0_command_pool0_command_buffer0)) {
+                std::cerr << "Failed to perform pre-pass resource transitions for compute pass 0.0" << std::endl;
+                return 1;
+            }
 
-        ImGui::Begin("Rule Set");
-        ImGui::Text("Behavior when certain neighbor count:");
-        ImGui::Text("(Note):");
-        ImGui::Text(" -1 means cell always dies");
-        ImGui::Text("  0 means cell continues with previous state");
-        ImGui::Text("  1 means cell always lives");
+            if (!compute_pass0_0.bind(queues.compute0_0, vk_compute_queue0_command_pool0_command_buffer0)) {
+                std::cerr << "Failed to bind resources for compute pass 0.0" << std::endl;
+                return 1;
+            }
 
-        if (ImGui::SmallButton("Load Preset: \"Conway's Game of Life\"")) {
-            live_count[0] = -1;
-            live_count[1] = -1;
-            live_count[2] =  0;
-            live_count[3] =  1;
-            live_count[4] = -1;
-            live_count[5] = -1;
-            live_count[6] = -1;
-            live_count[7] = -1;
-            live_count[8] = -1;
-        }
+            if (!compute_pass0_0.execute(queues.compute0_0, vk_compute_queue0_command_pool0_command_buffer0)) {
+                std::cerr << "Failed to execute compute pass 0.0" << std::endl;
+                return 1;
+            }
 
-        if (ImGui::SmallButton("Load Preset: \"High Life\"")) {
-            live_count[0] = -1;
-            live_count[1] = -1;
-            live_count[2] =  0;
-            live_count[3] =  1;
-            live_count[4] = -1;
-            live_count[5] = -1;
-            live_count[6] =  1;
-            live_count[7] = -1;
-            live_count[8] = -1;
-        }
+            if (!compute_pass0_0.post_transition(queues.compute0_0, vk_compute_queue0_command_pool0_command_buffer0)) {
+                std::cerr << "Failed to perform post-pass resource transitions for compute pass 0.0" << std::endl;
+                return 1;
+            }
 
-        ImGui::SliderInt("0 neighbors", &live_count[0], -1, 1);
-        ImGui::SliderInt("1 neighbors", &live_count[1], -1, 1);
-        ImGui::SliderInt("2 neighbors", &live_count[2], -1, 1);
-        ImGui::SliderInt("3 neighbors", &live_count[3], -1, 1);
-        ImGui::SliderInt("4 neighbors", &live_count[4], -1, 1);
-        ImGui::SliderInt("5 neighbors", &live_count[5], -1, 1);
-        ImGui::SliderInt("6 neighbors", &live_count[6], -1, 1);
-        ImGui::SliderInt("7 neighbors", &live_count[7], -1, 1);
-        ImGui::SliderInt("8 neighbors", &live_count[8], -1, 1);
-        ImGui::End();
+            if (!compute_pass0_0.cleanup(queues.compute0_0, vk_compute_queue0_command_pool0_command_buffer0)) {
+                std::cerr << "Failed to cleanup compute pass 0.0" << std::endl;
+                return 1;
+            }
 
-        p_uniforms->conditions =
-            ((live_count[0] + 1)) |
-            ((live_count[1] + 1) << 2) |
-            ((live_count[2] + 1) << 4) |
-            ((live_count[3] + 1) << 6) |
-            ((live_count[4] + 1) << 8) |
-            ((live_count[5] + 1) << 10) |
-            ((live_count[6] + 1) << 12) |
-            ((live_count[7] + 1) << 14) |
-            ((live_count[8] + 1) << 16);
-
-        std::cout << std::hex << p_uniforms->conditions << std::endl;
-
-        ImGui::Render();
-
-        /* prepare for compute pass 0.0 */
-        {
-            VkBuffer vk_tmp_buffer = vk_cellular_automata_input_buffer;
-            vk_cellular_automata_input_buffer = vk_cellular_automata_output_buffer;
-            vk_cellular_automata_output_buffer = vk_tmp_buffer;
-        }
-
-        kvk::resource::MonoAllocationResident const& cellular_automata_input_buffer_resident = cellular_automata_heap.residents[{ .vk_buffer = vk_cellular_automata_input_buffer }];
-        kvk::resource::MonoAllocationResident const& cellular_automata_output_buffer_resident = cellular_automata_heap.residents[{ .vk_buffer = vk_cellular_automata_output_buffer }];
-
-        compute_pass0_0.set_resources(cellular_automata_input_buffer_resident, cellular_automata_output_buffer_resident, uniform_buffer_resident, vk_cellular_automata_render_image, vk_cellular_automata_render_image_view, width, height);
-        if (render) {
-            compute_pass0_0.set_swapchain_backbuffer(vk_swapchain_backbuffers[vk_swapchain_backbuffer_index], vk_swapchain_backbuffer_views[vk_swapchain_backbuffer_index], swapchain_returns.vk_current_extent, swapchain_preference.vk_surface_format.format);
-        } else {
-            compute_pass0_0.set_swapchain_backbuffer(nullptr, nullptr, swapchain_returns.vk_current_extent, swapchain_preference.vk_surface_format.format);
-        }
-
-        if (!compute_pass0_0.update_descriptor_sets()) {
-            std::cerr << "Failed to update descriptor sets for compute pass 0.0" << std::endl;
-            return 1;
-        }
-
-        if (vkResetCommandPool(vk_device, vk_compute_queue0_command_pool0, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT) != VK_SUCCESS) {
-            std::cerr << "Failed to reset compute queue 0 command pool 0" << std::endl;
-            return 1;
-        }
-
-        VkCommandBufferBeginInfo vk_compute_queue0_command_pool0_command_buffer0_begin_info = {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        };
-
-        if (vkBeginCommandBuffer(vk_compute_queue0_command_pool0_command_buffer0, &vk_compute_queue0_command_pool0_command_buffer0_begin_info) != VK_SUCCESS) {
-            std::cerr << "Failed to begin compute queue 0 command pool 0 command buffer 0" << std::endl;
-            return 1;
-        }
-
-        if (!compute_pass0_0.prepare(queues.compute0_0, vk_compute_queue0_command_pool0_command_buffer0)) {
-            std::cerr << "Failed to prepare for compute pass 0.0" << std::endl;
-            return 1;
-        }
-
-        if (!compute_pass0_0.pre_transition(queues.compute0_0, vk_compute_queue0_command_pool0_command_buffer0)) {
-            std::cerr << "Failed to perform pre-pass resource transitions for compute pass 0.0" << std::endl;
-            return 1;
-        }
-
-        if (!compute_pass0_0.bind(queues.compute0_0, vk_compute_queue0_command_pool0_command_buffer0)) {
-            std::cerr << "Failed to bind resources for compute pass 0.0" << std::endl;
-            return 1;
-        }
-
-        if (!compute_pass0_0.execute(queues.compute0_0, vk_compute_queue0_command_pool0_command_buffer0)) {
-            std::cerr << "Failed to execute compute pass 0.0" << std::endl;
-            return 1;
-        }
-
-        if (!compute_pass0_0.post_transition(queues.compute0_0, vk_compute_queue0_command_pool0_command_buffer0)) {
-            std::cerr << "Failed to perform post-pass resource transitions for compute pass 0.0" << std::endl;
-            return 1;
-        }
-
-        if (!compute_pass0_0.cleanup(queues.compute0_0, vk_compute_queue0_command_pool0_command_buffer0)) {
-            std::cerr << "Failed to cleanup compute pass 0.0" << std::endl;
-            return 1;
-        }
-
-        VkImageMemoryBarrier vk_compute_pass0_0_prepare_for_blit_image_memory_barriers[2] = {
-            {
-                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-                .srcAccessMask = 0,
-                .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-                .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-                .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                .srcQueueFamilyIndex = queues.compute0_0.family_index,
-                .dstQueueFamilyIndex = queues.compute0_0.family_index,
-                .image = vk_cellular_automata_render_image,
-                .subresourceRange = {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                    .baseMipLevel = 0,
-                    .levelCount = 1,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1,
-                },
-            },
-            {
-                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-                .srcAccessMask = 0,
-                .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                .srcQueueFamilyIndex = queues.compute0_0.family_index,
-                .dstQueueFamilyIndex = queues.compute0_0.family_index,
-                .image = vk_swapchain_backbuffers[vk_swapchain_backbuffer_index],
-                .subresourceRange = {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                    .baseMipLevel = 0,
-                    .levelCount = 1,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1,
-                },
-            },
-        };
-
-        vkCmdPipelineBarrier(vk_compute_queue0_command_pool0_command_buffer0,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
-            0, nullptr,
-            0, nullptr,
-            render ? 2 : 1,
-            &vk_compute_pass0_0_prepare_for_blit_image_memory_barriers[0]
-        );
-        
-        if (render) {
-            VkClearColorValue vk_swapchain_backbuffer_clear_color = {
-                .float32 = { 0.0f, 0.0f, 0.0f, 1.0f }
-            };
-
-            VkImageSubresourceRange vk_swapchain_backbuffer_clear_range = {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1,
-            };
-
-            vkCmdClearColorImage(vk_compute_queue0_command_pool0_command_buffer0, vk_swapchain_backbuffers[vk_swapchain_backbuffer_index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &vk_swapchain_backbuffer_clear_color, 1, &vk_swapchain_backbuffer_clear_range);
-
-            VkImageBlit vk_compute_pass0_0_blit_render_image_to_swapchain = {
-                .srcSubresource = {
+            VkImageMemoryBarrier vk_compute_pass0_0_prepare_for_blit_image_memory_barriers[2] = {
+                {
+                    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                    .srcAccessMask = 0,
+                    .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+                    .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+                    .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    .srcQueueFamilyIndex = queues.compute0_0.family_index,
+                    .dstQueueFamilyIndex = queues.compute0_0.family_index,
+                    .image = vk_cellular_automata_render_image,
+                    .subresourceRange = {
                     .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                    .mipLevel = 0,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1,
-                },
-                .srcOffsets = {
-                    {
-                        .x = 0,
-                        .y = 0,
-                        .z = 0,
-                    },
-                    {
-                        .x = static_cast<int32_t>(width),
-                        .y = static_cast<int32_t>(height),
-                        .z = 1,
+                        .baseMipLevel = 0,
+                        .levelCount = 1,
+                        .baseArrayLayer = 0,
+                        .layerCount = 1,
                     },
                 },
-                .dstSubresource = {
+                {
+                    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                    .srcAccessMask = 0,
+                    .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                    .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                    .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    .srcQueueFamilyIndex = queues.compute0_0.family_index,
+                    .dstQueueFamilyIndex = queues.compute0_0.family_index,
+                    .image = vk_swapchain_backbuffers[vk_swapchain_backbuffer_index],
+                    .subresourceRange = {
                     .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                    .mipLevel = 0,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1,
-                },
-                .dstOffsets = {
-                    {
-                        .x = 0,
-                        .y = 0,
-                        .z = 0,
+                        .baseMipLevel = 0,
+                        .levelCount = 1,
+                        .baseArrayLayer = 0,
+                        .layerCount = 1,
                     },
-                    {
-                        .x = static_cast<int32_t>(window_width),
-                        .y = static_cast<int32_t>(window_height),
-                        .z = 1,
-                    },
-                },
-            };
-
-            vkCmdBlitImage(vk_compute_queue0_command_pool0_command_buffer0, vk_cellular_automata_render_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, vk_swapchain_backbuffers[vk_swapchain_backbuffer_index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &vk_compute_pass0_0_blit_render_image_to_swapchain, (width >= window_width / 2) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
-
-            VkImageMemoryBarrier vk_swapchain_backbuffer_prepare_for_imgui_render_pass0_0_image_memory_barrier = {
-                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-                .srcAccessMask = 0,
-                .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                .srcQueueFamilyIndex = queues.compute0_0.family_index,
-                .dstQueueFamilyIndex = queues.compute0_0.family_index,
-                .image = vk_swapchain_backbuffers[vk_swapchain_backbuffer_index],
-                .subresourceRange = {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                    .baseMipLevel = 0,
-                    .levelCount = 1,
-                    .baseArrayLayer = 0,
-                .layerCount = 1,
                 },
             };
 
             vkCmdPipelineBarrier(vk_compute_queue0_command_pool0_command_buffer0,
-                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
                 0, nullptr,
                 0, nullptr,
-                1,
-                &vk_swapchain_backbuffer_prepare_for_imgui_render_pass0_0_image_memory_barrier
+                render ? 2 : 1,
+                &vk_compute_pass0_0_prepare_for_blit_image_memory_barriers[0]
             );
 
-            VkRenderingAttachmentInfoKHR vk_imgui_render_pass0_0_color_attachment_info = {
-                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR,
-                .imageView = vk_swapchain_backbuffer_views[vk_swapchain_backbuffer_index],
-                .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
-                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-                .clearValue = {
-                    .color = {
-                        .float32 = { 0.0f, 0.0f, 0.0f, 1.0f },
-                    },
-                },
-            };
+            if (render) {
+                VkClearColorValue vk_swapchain_backbuffer_clear_color = {
+                    .float32 = { 0.0f, 0.0f, 0.0f, 1.0f }
+                };
 
-            VkRenderingInfoKHR vk_imgui_render_pass0_0_rendering_info = {
-                .sType = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR,
-                .renderArea = {
-                    .offset = {
-                        .x = 0,
-                        .y = 0,
-                    },
-                    .extent = swapchain_returns.vk_current_extent,
-                },
-                .layerCount = 1,
-                .viewMask = 0,
-                .colorAttachmentCount = 1,
-                .pColorAttachments = &vk_imgui_render_pass0_0_color_attachment_info,
-            };
-
-            vkCmdBeginRenderingKHR(vk_compute_queue0_command_pool0_command_buffer0, &vk_imgui_render_pass0_0_rendering_info);
-            ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), vk_compute_queue0_command_pool0_command_buffer0, nullptr);
-            vkCmdEndRenderingKHR(vk_compute_queue0_command_pool0_command_buffer0);
-
-            VkImageMemoryBarrier vk_swapchain_backbuffer_prepare_for_present_image_memory_barrier = {
-                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-                .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-                .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                .srcQueueFamilyIndex = queues.compute0_0.family_index,
-                .dstQueueFamilyIndex = queues.compute0_0.family_index,
-                .image = vk_swapchain_backbuffers[vk_swapchain_backbuffer_index],
-                .subresourceRange = {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                VkImageSubresourceRange vk_swapchain_backbuffer_clear_range = {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                     .baseMipLevel = 0,
                     .levelCount = 1,
                     .baseArrayLayer = 0,
-                .layerCount = 1,
-                },
+                    .layerCount = 1,
+                };
+
+                vkCmdClearColorImage(vk_compute_queue0_command_pool0_command_buffer0, vk_swapchain_backbuffers[vk_swapchain_backbuffer_index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &vk_swapchain_backbuffer_clear_color, 1, &vk_swapchain_backbuffer_clear_range);
+
+                VkImageBlit vk_compute_pass0_0_blit_render_image_to_swapchain = {
+                    .srcSubresource = {
+                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                        .mipLevel = 0,
+                        .baseArrayLayer = 0,
+                        .layerCount = 1,
+                    },
+                    .srcOffsets = {
+                        {
+                            .x = 0,
+                            .y = 0,
+                            .z = 0,
+                        },
+                        {
+                            .x = static_cast<int32_t>(width),
+                            .y = static_cast<int32_t>(height),
+                            .z = 1,
+                        },
+                    },
+                    .dstSubresource = {
+                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                        .mipLevel = 0,
+                        .baseArrayLayer = 0,
+                        .layerCount = 1,
+                    },
+                    .dstOffsets = {
+                        {
+                            .x = 0,
+                            .y = 0,
+                            .z = 0,
+                        },
+                        {
+                            .x = static_cast<int32_t>(window_width),
+                            .y = static_cast<int32_t>(window_height),
+                            .z = 1,
+                        },
+                    },
+                };
+
+                vkCmdBlitImage(vk_compute_queue0_command_pool0_command_buffer0, vk_cellular_automata_render_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, vk_swapchain_backbuffers[vk_swapchain_backbuffer_index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &vk_compute_pass0_0_blit_render_image_to_swapchain, (width >= window_width / 2) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
+
+                VkImageMemoryBarrier vk_swapchain_backbuffer_prepare_for_imgui_render_pass0_0_image_memory_barrier = {
+                    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                    .srcAccessMask = 0,
+                    .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                    .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    .srcQueueFamilyIndex = queues.compute0_0.family_index,
+                    .dstQueueFamilyIndex = queues.compute0_0.family_index,
+                    .image = vk_swapchain_backbuffers[vk_swapchain_backbuffer_index],
+                    .subresourceRange = {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                        .baseMipLevel = 0,
+                        .levelCount = 1,
+                        .baseArrayLayer = 0,
+                    .layerCount = 1,
+                    },
+                };
+
+                vkCmdPipelineBarrier(vk_compute_queue0_command_pool0_command_buffer0,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
+                    0, nullptr,
+                    0, nullptr,
+                    1,
+                    &vk_swapchain_backbuffer_prepare_for_imgui_render_pass0_0_image_memory_barrier
+                );
+
+                VkRenderingAttachmentInfoKHR vk_imgui_render_pass0_0_color_attachment_info = {
+                    .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR,
+                    .imageView = vk_swapchain_backbuffer_views[vk_swapchain_backbuffer_index],
+                    .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+                    .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                    .clearValue = {
+                        .color = {
+                            .float32 = { 0.0f, 0.0f, 0.0f, 1.0f },
+                        },
+                    },
+                };
+
+                VkRenderingInfoKHR vk_imgui_render_pass0_0_rendering_info = {
+                    .sType = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR,
+                    .renderArea = {
+                        .offset = {
+                            .x = 0,
+                            .y = 0,
+                        },
+                        .extent = swapchain_returns.vk_current_extent,
+                    },
+                    .layerCount = 1,
+                    .viewMask = 0,
+                    .colorAttachmentCount = 1,
+                    .pColorAttachments = &vk_imgui_render_pass0_0_color_attachment_info,
+                };
+
+                vkCmdBeginRenderingKHR(vk_compute_queue0_command_pool0_command_buffer0, &vk_imgui_render_pass0_0_rendering_info);
+                ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), vk_compute_queue0_command_pool0_command_buffer0, nullptr);
+                vkCmdEndRenderingKHR(vk_compute_queue0_command_pool0_command_buffer0);
+
+                VkImageMemoryBarrier vk_swapchain_backbuffer_prepare_for_present_image_memory_barrier = {
+                    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                    .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                    .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+                    .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                    .srcQueueFamilyIndex = queues.compute0_0.family_index,
+                    .dstQueueFamilyIndex = queues.compute0_0.family_index,
+                    .image = vk_swapchain_backbuffers[vk_swapchain_backbuffer_index],
+                    .subresourceRange = {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                        .baseMipLevel = 0,
+                        .levelCount = 1,
+                        .baseArrayLayer = 0,
+                    .layerCount = 1,
+                    },
+                };
+
+                vkCmdPipelineBarrier(vk_compute_queue0_command_pool0_command_buffer0,
+                    VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                    0, nullptr,
+                    0, nullptr,
+                    1,
+                    &vk_swapchain_backbuffer_prepare_for_present_image_memory_barrier
+                );
+            }
+
+            if (vkEndCommandBuffer(vk_compute_queue0_command_pool0_command_buffer0) != VK_SUCCESS) {
+                std::cerr << "Failed to end compute queue 0 command pool 0 command buffer 0" << std::endl;
+                return 1;
+            }
+
+            VkPipelineStageFlags vk_compute_queue0_submit_wait_stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+
+            VkSubmitInfo vk_compute_queue0_submit_info = {
+                .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                .waitSemaphoreCount = (render) ? 1u : 0u,
+                .pWaitSemaphores = (render) ? &vk_swapchain_image_acquisition_semaphore : nullptr,
+                .pWaitDstStageMask = (render) ? &vk_compute_queue0_submit_wait_stage_mask : nullptr,
+                .commandBufferCount = 1,
+                .pCommandBuffers = &vk_compute_queue0_command_pool0_command_buffer0,
+                .signalSemaphoreCount = (render) ? 1u : 0u,
+                .pSignalSemaphores = (render) ? &vk_swapchain_image_finished_semaphores[vk_swapchain_backbuffer_index] : nullptr,
             };
 
-            vkCmdPipelineBarrier(vk_compute_queue0_command_pool0_command_buffer0,
-                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
-                0, nullptr,
-                0, nullptr,
-                1,
-                &vk_swapchain_backbuffer_prepare_for_present_image_memory_barrier
-            );
-        }
+            if (vkQueueSubmit(queues.compute0_0.vk_queue, 1, &vk_compute_queue0_submit_info, compute_pass0_0.finished_fence()) != VK_SUCCESS) {
+                std::cerr << "Failed to submit compute pass 0.0 work to compute queue 0.0" << std::endl;
+                return 1;
+            }
 
-        if (vkEndCommandBuffer(vk_compute_queue0_command_pool0_command_buffer0) != VK_SUCCESS) {
-            std::cerr << "Failed to end compute queue 0 command pool 0 command buffer 0" << std::endl;
-            return 1;
-        }
+            if (render) {
+                VkPresentInfoKHR vk_compute_queue0_present_info = {
+                    .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+                    .waitSemaphoreCount = 1,
+                    .pWaitSemaphores = &vk_swapchain_image_finished_semaphores[vk_swapchain_backbuffer_index],
+                    .swapchainCount = 1,
+                    .pSwapchains = &vk_swapchain,
+                    .pImageIndices = &vk_swapchain_backbuffer_index,
+                    .pResults = nullptr,
+                };
 
-        VkPipelineStageFlags vk_compute_queue0_submit_wait_stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+                if (vkQueuePresentKHR(queues.compute0_0.vk_queue, &vk_compute_queue0_present_info) != VK_SUCCESS) {
+                    std::cerr << "Failed to present compute queue 0" << std::endl;
+                }
+            }
 
-        VkSubmitInfo vk_compute_queue0_submit_info = {
-            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            .waitSemaphoreCount = (render) ? 1u : 0u,
-            .pWaitSemaphores = (render) ? &vk_swapchain_image_acquisition_semaphore : nullptr,
-            .pWaitDstStageMask = (render) ? &vk_compute_queue0_submit_wait_stage_mask : nullptr,
-            .commandBufferCount = 1,
-            .pCommandBuffers = &vk_compute_queue0_command_pool0_command_buffer0,
-            .signalSemaphoreCount = (render) ? 1u : 0u,
-            .pSignalSemaphores = (render) ? &vk_swapchain_image_finished_semaphores[vk_swapchain_backbuffer_index] : nullptr,
-        };
-
-        if (vkQueueSubmit(queues.compute0_0.vk_queue, 1, &vk_compute_queue0_submit_info, compute_pass0_0.finished_fence()) != VK_SUCCESS) {
-            std::cerr << "Failed to submit compute pass 0.0 work to compute queue 0.0" << std::endl;
-            return 1;
-        }
-
-        if (render) {
-            VkPresentInfoKHR vk_compute_queue0_present_info = {
-                .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-                .waitSemaphoreCount = 1,
-                .pWaitSemaphores = &vk_swapchain_image_finished_semaphores[vk_swapchain_backbuffer_index],
-                .swapchainCount = 1,
-                .pSwapchains = &vk_swapchain,
-                .pImageIndices = &vk_swapchain_backbuffer_index,
-                .pResults = nullptr,
-            };
-
-            if (vkQueuePresentKHR(queues.compute0_0.vk_queue, &vk_compute_queue0_present_info) != VK_SUCCESS) {
-                std::cerr << "Failed to present compute queue 0" << std::endl;
+            tick++;
+            if ((p_uniforms->v & 0x20) == 0) {
+                game_tick++;
             }
         }
 
-        tick++;
-        if ((p_uniforms->v & 0x20) == 0) {
-            game_tick++;
-        }
+        vkDeviceWaitIdle(vk_device);
     }
-
-    vkDeviceWaitIdle(vk_device);
 
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplSDL3_Shutdown();
